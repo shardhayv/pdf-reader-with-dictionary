@@ -1,0 +1,41 @@
+# Claude Code internal file
+CLAUDE.md
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+out/
+build/
+
+# Electron builder cache
+.cache/
+electron-builder-cache/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime & temp
+*.tmp
+*.temp
+.temp/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor directories
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# User preferences (generated at runtime, not source)
+preferences.json

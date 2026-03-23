@@ -1,0 +1,36 @@
+{
+  "name": "gloss",
+  "version": "1.0.0",
+  "description": "Distraction-free PDF reader with instant dictionary lookup",
+  "author": "Shardhay Vatshyayan",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win"
+  },
+  "dependencies": {
+    "js-mdict": "^7.0.0",
+    "pdfjs-dist": "^4.9.155"
+  },
+  "devDependencies": {
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.shardhay.gloss",
+    "productName": "Gloss",
+    "icon": "assets/icon.png",
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.png"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "about.html",
+      "assets/**/*",
+      "renderer/**/*",
+      "node_modules/**/*"
+    ]
+  }
+}
