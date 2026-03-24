@@ -348,6 +348,7 @@ function showPopup(results, word, selection) {
   popupResults = results;
   popupWord    = word;
   popupContent.innerHTML = buildPopupHTML(results, word);
+  popupContent.scrollTop = 0;
 
   popup.classList.remove('visible');
   popup.style.display = 'block';
@@ -386,6 +387,25 @@ popupClose.addEventListener('click', closePopup);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePopup(); });
 document.addEventListener('mousedown', e => {
   if (popup.classList.contains('visible') && !popup.contains(e.target)) closePopup();
+});
+
+// ─── Selection-based lookup ───────────────────────────────────────────────────
+document.addEventListener('mouseup', async e => {
+  if (e.target.closest('#popup')) return;
+
+  setTimeout(async () => {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) return;
+
+    const raw = selection.toString().trim();
+    if (!raw || raw.length < 2) return;
+
+    let word = raw.split(/\s+/)[0];
+    word = word.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').replace(/^-+|-+$/g, '').toLowerCase();
+    if (!word || word.length < 2) return;
+
+    await lookupAndShow(word, selection);
+  }, 100);
 });
 
 // Delegated: tab switching + wiki link
