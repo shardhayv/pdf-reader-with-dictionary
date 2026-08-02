@@ -2,24 +2,33 @@
 
 # Gloss
 
-**A distraction-free PDF reader with instant dictionary lookup**
+**A quiet PDF reader for people who read to understand**
 
-*Double-click any word. Get a definition. Never leave the page.*
+*Select a word — in English or Devanagari — and its meaning appears in the margin.*
 
 ![Electron](https://img.shields.io/badge/Electron-33-47848F?style=flat&logo=electron&logoColor=white)
-![PDF.js](https://img.shields.io/badge/PDF.js-v4-orange?style=flat)
-![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?style=flat&logo=windows&logoColor=white)
+![PDF.js](https://img.shields.io/badge/PDF.js-4.10-orange?style=flat)
+![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64-E95420?style=flat&logo=linux&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat)
 
 </div>
 
 ---
 
-## What is Gloss?
+## What Gloss is
 
-Gloss is a desktop PDF reader built around a single idea: when you don't know a word, looking it up should take one gesture, not ten. Double-click any word in the PDF and a definition appears inline — sourced from your own MDX dictionaries (Oxford, Merriam-Webster, etc.) with Wikipedia as a fallback.
+Gloss is a desktop PDF reader built around one idea: when you don't know a word,
+looking it up should take one gesture, not ten. Select any word and a definition
+appears next to it — from **your own MDX dictionaries**, with Wikipedia as an
+optional fallback.
 
-Built entirely with web technologies inside Electron, with no frontend framework — just well-structured vanilla JS, PDF.js v4, and a strict two-process security model.
+It works equally well with Latin and Devanagari text. Selecting `काठमाडौँ` gives
+you the whole word, chandrabindu and all; searching for `क्षेत्र` finds it even
+when the conjunct is split across two internal text runs.
+
+Dictionary lookups are entirely local. Wikipedia is the only network request
+Gloss ever makes, and only when you ask for a word. There are no accounts, no
+telemetry, and no analytics.
 
 ---
 
@@ -27,144 +36,258 @@ Built entirely with web technologies inside Electron, with no frontend framework
 
 | | |
 |---|---|
-| **Instant word lookup** | Double-click any word in the PDF to get a definition immediately |
-| **Multi-dictionary support** | Load multiple `.mdx` dictionaries, set lookup priority, toggle them on/off |
-| **Wikipedia fallback** | Automatically queries Wikipedia when no dictionary match is found |
-| **Virtual page rendering** | Only renders pages near the viewport — 500-page PDFs open instantly |
-| **Continuous scroll** | Smooth infinite-scroll layout, the way reading on the web works |
-| **Read mode** | F11 hides all UI chrome — nothing but the document |
-| **Theme support** | Light, dark, or follows system preference |
-| **HiDPI rendering** | Canvas renders at `devicePixelRatio` for sharp text on high-DPI displays |
-| **Go-to-page** | Type a page number and press Enter to jump instantly |
-| **Preferences** | Persistent settings across sessions — dictionary order, Wikipedia mode, theme |
+| **Instant lookup** | Select a word or short phrase; the definition appears without covering the line you're reading |
+| **Latin and Devanagari** | Unicode-aware selection, search, and lookup that never split a conjunct or drop a matra |
+| **Your dictionaries** | Load any number of `.mdx` files, set their priority, toggle them per lookup |
+| **Wikipedia fallback** | Optional, in English, Hindi, Nepali, or Maithili |
+| **Big documents** | Only a handful of pages are ever in memory, so a 300-page PDF opens instantly |
+| **Find in document** | Unicode-aware search with result counts and highlighting |
+| **Pages and outline** | Lazy thumbnail sidebar and the document's own table of contents |
+| **Zoom** | Fit width, fit page, and free zoom with `Ctrl`+wheel anchored under the cursor |
+| **Picks up where you left off** | Page, zoom, and scroll position are remembered per document |
+| **Reads like a native app** | Drag-and-drop, file associations, recent documents, remembered window position |
+| **Light, dark, or system** | Plus reduced-motion support and full keyboard access |
 
 ---
 
-## Architecture
+## Requirements
 
-Gloss follows Electron's recommended two-process model with strict context isolation.
+- Linux x86_64 (developed and verified on Ubuntu 26.04, GNOME/Wayland)
+- Node.js 20.19 or newer to build from source (Node 24 recommended) — PDF.js
+  and Playwright require Node 20, ESLint 10 requires 20.19
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  Main Process (main.js)                                 │
-│  Node.js · file system · dialog · IPC handlers         │
-│  Dictionary state · Wikipedia HTTP · preferences        │
-└──────────────────────┬──────────────────────────────────┘
-                       │ contextBridge (ipcRenderer.invoke)
-┌──────────────────────▼──────────────────────────────────┐
-│  Preload (preload.js)                                   │
-│  Exposes window.electronAPI — 17 typed methods          │
-└──────────────────────┬──────────────────────────────────┘
-                       │ window.electronAPI.*
-┌──────────────────────▼──────────────────────────────────┐
-│  Renderer Process (renderer/renderer.js)                │
-│  PDF rendering · UI · word lookup · popup · observers  │
-└─────────────────────────────────────────────────────────┘
-```
+Devanagari rendering uses your system fonts. On Debian/Ubuntu:
 
-- `nodeIntegration: false` and `contextIsolation: true` are enforced — the renderer has zero direct Node access
-- All file I/O, dictionary parsing, and network calls happen exclusively in the main process
-- The renderer communicates only through the typed API exposed by the preload bridge
-
----
-
-## How the Key Features Work
-
-### Virtual / lazy rendering
-
-Rendering every page of a large PDF upfront is the most common crash vector in PDF viewers. Gloss avoids this entirely:
-
-1. On load, placeholder `<div>`s are created for **all pages immediately** — sized to the correct height so the scrollbar is accurate from the start
-2. An `IntersectionObserver` watches every placeholder with a `200px` root margin
-3. When a placeholder enters (or nears) the viewport, its canvas and text layer are rendered on demand
-4. Pages more than 5 away from the current viewport have their canvas **destroyed** and replaced back with a placeholder — freeing GPU and heap memory
-5. Result: only 4–5 pages live in memory at any time, regardless of document length
-
-### Word lookup pipeline
-
-```
-dblclick on .pdf-text-layer
-  → extractCleanWord()          strip punctuation, normalise case
-  → lookupCache.get(word)       return immediately if cached
-  → electronAPI.lookupAll()     query all enabled MDX dicts in priority order
-  → electronAPI.lookupWikipedia() if enabled and conditions met
-  → showPopup()                 position relative to selection rect
-```
-
-Results are cached in a `Map` for the session so repeated lookups are instant.
-
-### Text layer
-
-PDF.js v4 renders an invisible `<div>` of absolutely-positioned `<span>`s over the canvas, matching the exact position and scale of every word in the document. This enables native text selection and the `dblclick` event that drives the lookup — the canvas itself is not interactive.
-
----
-
-## Project Structure
-
-```
-electron-pdf-reader/
-├── main.js              # Main process — IPC, file I/O, dictionary state
-├── preload.js           # Context bridge — exposes window.electronAPI
-├── about.html           # About window
-├── renderer/
-│   ├── index.html       # App shell
-│   ├── renderer.js      # All UI logic, PDF rendering, word lookup
-│   └── style.css        # Theming, layout, popup, modal
-└── package.json
+```bash
+sudo apt install fonts-noto-core
 ```
 
 ---
 
-## Getting Started
-
-**Prerequisites:** Node.js v18+
+## Install and run from source
 
 ```bash
 git clone https://github.com/shardhayv/pdf-reader-with-dictionary.git
-cd gloss
+cd pdf-reader-with-dictionary
 npm install
 npm start
 ```
 
-**Build a Windows installer:**
+### If the app refuses to start
+
+On Ubuntu 24.04 and newer, unprivileged user namespaces are restricted by
+AppArmor, and the Electron binary in `node_modules` ships a `chrome-sandbox`
+helper that is not setuid. Electron then refuses to run rather than start
+unsandboxed — which is the correct thing for it to do. Fix the helper once:
 
 ```bash
-npm run build
-# Output → dist/
+sudo chown root:root node_modules/electron/dist/chrome-sandbox
+sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+```
+
+Repeat this after reinstalling Electron. **Do not** pass `--no-sandbox` to work
+around it: that disables a real security boundary. Installed `.deb` builds set
+this up correctly at install time and need no such step.
+
+---
+
+## Packaging
+
+```bash
+npm run dist            # AppImage + .deb into dist/
+npm run dist:deb        # .deb only  (recommended on Debian/Ubuntu)
+npm run dist:appimage   # AppImage only
+npm run dist:dir        # unpacked build into dist/linux-unpacked/
+```
+
+Install and run the `.deb`:
+
+```bash
+sudo apt install ./dist/gloss_2.0.0_amd64.deb
+gloss                      # or launch from your applications menu
+gloss ~/Documents/paper.pdf
+```
+
+The package registers Gloss as a PDF viewer, installs a desktop entry and
+icons, and makes `chrome-sandbox` setuid so the sandbox works on systems with
+restricted user namespaces.
+
+**AppImage caveat:** an AppImage is mounted read-only and owned by the invoking
+user, so its `chrome-sandbox` can never be setuid. On distributions that also
+restrict unprivileged user namespaces (Ubuntu 24.04+), the AppImage cannot
+sandbox itself. Prefer the `.deb` there, or install an AppArmor profile that
+permits `userns` for the AppImage path. The `.deb` is the recommended artifact
+for Ubuntu and Debian.
+
+---
+
+## Using Gloss
+
+1. **Open a PDF** — the toolbar button, `Ctrl+O`, drag a file onto the window,
+   pass a path on the command line, or open it from your file manager.
+2. **Add dictionaries** — Preferences → Dictionaries → *Add dictionaries…* and
+   pick one or more `.mdx` files. Free MDX dictionaries (Oxford, Merriam-Webster,
+   WordNet, and Hindi/Nepali dictionaries) are widely available; Gloss does not
+   bundle any.
+3. **Look up a word** — select it. Lookups only ever trigger from text inside the
+   document, never from the interface. Use `Ctrl+D` to force a lookup of a longer
+   selection, and pin the result if you want it to stay open while you read.
+4. **Search** — `Ctrl+F`, then `Enter` / `Shift+Enter` to step through results.
+5. **Read** — `F11` hides everything but the page.
+
+### Keyboard
+
+| Key | Action |
+|---|---|
+| `Ctrl+O` | Open a PDF |
+| `Ctrl+F` | Find in document |
+| `Enter` / `Shift+Enter` | Next / previous result (in the find bar) |
+| `Ctrl+D` | Look up the current selection |
+| `Ctrl` `+` / `-` | Zoom in / out |
+| `Ctrl+0` | Fit width |
+| `Ctrl+Shift+0` | Fit page |
+| `Ctrl` + mouse wheel | Zoom around the cursor |
+| `F9` | Pages and outline sidebar |
+| `F11` | Read mode |
+| `Ctrl+,` | Preferences |
+| `PageUp` / `PageDown` / `Home` / `End` | Scroll |
+| `←` / `→` | Previous / next page |
+| `Escape` | Close the topmost thing only |
+| `F1` | About |
+
+---
+
+## How it works
+
+Gloss follows Electron's two-process model with the renderer fully sandboxed.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Main process — main.js, main/                               │
+│  paths.js     which files may be read, and how               │
+│  store.js     preferences, per-document state, recents       │
+│  dicts.js     MDX registry and candidate lookup              │
+│  wiki.js      the only network access in the app             │
+│  security.js  navigation, window, and permission denial      │
+│  windows.js   window lifecycle, bounds, menu                 │
+│  ipc.js       the entire IPC surface                         │
+└───────────────────────────┬──────────────────────────────────┘
+                            │ contextBridge — 20 typed methods
+┌───────────────────────────▼──────────────────────────────────┐
+│  Preload — preload.js  (sandboxed, context-isolated)         │
+│  Resolves dropped files to paths; exposes window.gloss       │
+└───────────────────────────┬──────────────────────────────────┘
+                            │ window.gloss.*
+┌───────────────────────────▼──────────────────────────────────┐
+│  Renderer — renderer/js/                                     │
+│  app.js       composition root, keyboard layers              │
+│  viewer.js    document lifecycle, virtualized rendering      │
+│  text.js      Unicode segmentation, candidates, search index │
+│  selection.js decides when a selection becomes a lookup      │
+│  lookup.js    lookup orchestration and race prevention       │
+│  popup.js     sanitization and the definition surface        │
+│  search.js    find-in-document                               │
+│  sidebar.js   thumbnails and outline                         │
+│  prefsModal.js, dom.js, icons.js                             │
+└──────────────────────────────────────────────────────────────┘
+```
+
+`renderer/js/text.js` has no DOM or Electron dependencies, so the Unicode
+behaviour that matters most is testable in plain Node.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design decisions behind
+the virtualized renderer, the lookup candidate ladder, and the security model,
+and [docs/TESTING.md](docs/TESTING.md) for how to run and extend the tests.
+
+---
+
+## Tests
+
+```bash
+npm run fixtures     # generate test PDFs (once; they are not committed)
+npm run test:unit    # Unicode, candidates, search, path validation
+npm run test:e2e     # Electron integration + security regressions
+npm test             # both
+```
+
+`npm run test:e2e` passes `--no-sandbox` **to the test harness only**, because
+the development Electron binary cannot sandbox itself (see above). If you have
+made `chrome-sandbox` setuid, run the suite fully sandboxed:
+
+```bash
+GLOSS_TEST_SANDBOX=1 npm run test:e2e
+```
+
+To review the interface visually:
+
+```bash
+node scripts/screenshots.js   # writes test/screenshots/
 ```
 
 ---
 
-## Usage
+## Project structure
 
-1. **Open PDF** — click *Open PDF* in the toolbar
-2. **Add a dictionary** — click *Add Dictionary* and select an `.mdx` file
-   > Free MDX dictionaries (Oxford, Merriam-Webster, WordNet, OALD, etc.) are widely available online
-3. **Look up a word** — double-click any word in the document
-4. **Navigate** — scroll freely, or type a page number in the toolbar and press Enter
-5. **Read mode** — press `F11` to strip the UI and read full-screen
-6. **About** — `Help → About Gloss` or press `F1`
+```
+pdf-reader-with-dictionary/
+├── main.js                  # main-process entry: single instance, CLI args
+├── preload.js               # context bridge
+├── main/                    # main-process modules
+├── renderer/
+│   ├── index.html           # app shell
+│   ├── style.css            # the whole design system
+│   └── js/                  # renderer modules
+├── about.html/.css/.js      # about window
+├── assets/icon.png
+├── build/                   # packaging scripts (deb maintainer scripts)
+├── scripts/                 # fixture generators, screenshot runner
+├── test/unit/               # node:test suites
+├── test/e2e/                # Playwright + Electron suites
+└── docs/                    # architecture and testing notes
+```
 
 ---
 
-## Tech Stack
+## Tech stack
 
 | Package | Version | Role |
 |---|---|---|
-| [Electron](https://www.electronjs.org/) | 33 | Desktop shell, main/renderer process model |
-| [PDF.js](https://mozilla.github.io/pdf.js/) | 4.9 | PDF parsing, canvas render, text layer |
-| [js-mdict](https://github.com/terasum/js-mdict) | 7 | MDX/MDict dictionary file parsing |
-| [electron-builder](https://www.electron.build/) | 25 | Windows NSIS installer packaging |
+| [Electron](https://www.electronjs.org/) | 33 | Desktop shell and process model |
+| [PDF.js](https://mozilla.github.io/pdf.js/) | 4.10 | PDF parsing, rendering, text layer |
+| [js-mdict](https://github.com/terasum/js-mdict) | 7 | MDX dictionary parsing |
+| [DOMPurify](https://github.com/cure53/DOMPurify) | 3 | Sanitizing untrusted dictionary HTML |
+| [electron-builder](https://www.electron.build/) | 25 | AppImage and Debian packaging |
+| [Playwright](https://playwright.dev/) | 1.62 | Electron integration tests |
 
-No frontend framework. No bundler. Plain ES modules in the renderer.
+No frontend framework and no bundler — plain ES modules in the renderer.
+
+---
+
+## Known limitations
+
+- **Scanned PDFs have no text.** Gloss displays them and says so plainly, but
+  search and lookup need text. There is no built-in OCR.
+- **Some PDFs have broken text mappings.** A PDF can render perfectly while
+  carrying incorrect `ToUnicode` data — Devanagari conjuncts are especially
+  prone to this, and Chromium's own PDF export has the problem. Gloss detects
+  the case and warns you instead of silently returning wrong words. Nothing can
+  recover the correct text from such a file short of OCR.
+- **pdf.js decides where text runs begin and end.** Occasionally it inserts a
+  space inside a word or splits one across runs. Search handles the splits;
+  a spurious inserted space can still affect an exact-phrase search.
+- **AppImage sandboxing on Ubuntu 24.04+** — see the packaging note above.
+- **Linux x86_64 only** in this release. Nothing in the code is Linux-specific,
+  but no other platform has been built or tested.
 
 ---
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
 
----
+Gloss bundles no dictionary data. `.mdx` files you load are yours, and their
+contents are treated as untrusted input: definitions are sanitized before
+display and can never navigate the app or reach the network.
 
 <div align="center">
 

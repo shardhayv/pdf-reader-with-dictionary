@@ -2,109 +2,188 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src blob:;" />
+    content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob:; font-src 'self'; worker-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none';" />
   <title>Gloss</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-  <!-- ── Toolbar ──────────────────────────────────────────────────────────── -->
-  <header class="toolbar">
-    <div class="toolbar-left">
-      <button class="btn btn-primary" id="btn-open-pdf" title="Open a PDF file">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-          <polyline points="14,2 14,8 20,8"/>
-        </svg>
-        Open PDF
-      </button>
+<div class="sr-only" id="sr-status" role="status" aria-live="polite"></div>
 
-      <button class="btn" id="btn-add-dict" title="Add one or more MDX dictionary files">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-          <line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/>
-        </svg>
-        Add Dictionary
-      </button>
+<!-- The app shell owns the column layout. Keeping it off <body> means
+     elements other code appends to the body (pdf.js adds a hidden canvas
+     when it decodes images) cannot disturb the layout. -->
+<div class="app-shell">
 
-      <button class="btn" id="read-mode-btn" title="Read Mode (F11)">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
-        </svg>
-        Read
-      </button>
+<!-- ── Toolbar ─────────────────────────────────────────────────────────────── -->
+<header class="toolbar" id="toolbar">
+  <div class="toolbar-group">
+    <button class="btn btn--primary" id="btn-open" title="Open a PDF (Ctrl+O)">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+      Open
+    </button>
+    <button class="icon-btn" id="btn-sidebar" title="Pages and outline (F9)" aria-label="Toggle sidebar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
+    </button>
+    <button class="icon-btn" id="btn-search" title="Find in document (Ctrl+F)" aria-label="Find in document">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
+    </button>
+  </div>
 
-      <button class="btn" id="btn-prefs" title="Preferences">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-        </svg>
-        Preferences
-      </button>
+  <div class="toolbar-group toolbar-group--center" id="viewer-controls" hidden>
+    <button class="icon-btn" id="btn-prev-page" title="Previous page" aria-label="Previous page">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+    </button>
+    <div class="page-field">
+      <input type="text" inputmode="numeric" id="page-input" value="1" aria-label="Current page" />
+      <span id="page-total">of 1</span>
     </div>
+    <button class="icon-btn" id="btn-next-page" title="Next page" aria-label="Next page">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+    </button>
 
-    <div class="toolbar-center">
-      <span class="page-info" id="page-info">—</span>
-      <input type="number" id="page-goto" class="page-goto" min="1" placeholder="Go to…"
-             title="Type a page number and press Enter" />
+    <span class="toolbar-divider"></span>
 
+    <button class="icon-btn" id="btn-zoom-out" title="Zoom out (Ctrl+−)" aria-label="Zoom out">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>
+    </button>
+    <select id="zoom-menu" class="zoom-menu" aria-label="Zoom level">
+      <option value="fit-width">Fit width</option>
+      <option value="fit-page">Fit page</option>
+      <option value="0.5">50%</option>
+      <option value="0.75">75%</option>
+      <option value="1">100%</option>
+      <option value="1.5">150%</option>
+      <option value="2">200%</option>
+      <option value="1" id="zoom-custom-option" hidden>100%</option>
+    </select>
+    <button class="icon-btn" id="btn-zoom-in" title="Zoom in (Ctrl++)" aria-label="Zoom in">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+    </button>
+  </div>
+
+  <div class="toolbar-group toolbar-group--end">
+    <div class="source-chips" id="source-chips" aria-label="Lookup sources"></div>
+    <button class="icon-btn" id="btn-prefs" title="Preferences (Ctrl+,)" aria-label="Preferences">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </div>
+</header>
+
+<!-- ── Find bar ────────────────────────────────────────────────────────────── -->
+<div class="search-bar" id="search-bar" role="search" hidden>
+  <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
+  <input type="text" id="search-input" placeholder="Find in document" aria-label="Find in document"
+         aria-describedby="search-count" spellcheck="false" />
+  <span class="search-count" id="search-count" aria-live="polite"></span>
+  <button class="icon-btn icon-btn--sm" id="search-prev" title="Previous result (Shift+Enter)" aria-label="Previous result">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>
+  </button>
+  <button class="icon-btn icon-btn--sm" id="search-next" title="Next result (Enter)" aria-label="Next result">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+  </button>
+  <button class="icon-btn icon-btn--sm" id="search-close" title="Close find (Escape)" aria-label="Close find">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+  </button>
+</div>
+
+<!-- ── Document notice ─────────────────────────────────────────────────────── -->
+<div class="banner" id="doc-banner" hidden>
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+  <span class="banner-text"></span>
+  <button class="icon-btn icon-btn--sm" id="banner-dismiss" aria-label="Dismiss notice">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+  </button>
+</div>
+
+<!-- ── Workspace ───────────────────────────────────────────────────────────── -->
+<div class="workspace">
+  <aside class="sidebar" id="sidebar" hidden>
+    <div class="sidebar-tabs" role="tablist">
+      <button class="sidebar-tab sidebar-tab--active" id="sidebar-tab-thumbnails" role="tab" aria-selected="true">Pages</button>
+      <button class="sidebar-tab" id="sidebar-tab-outline" role="tab" aria-selected="false">Outline</button>
     </div>
+    <div class="sidebar-panel" id="sidebar-thumbnails" role="tabpanel"></div>
+    <div class="sidebar-panel" id="sidebar-outline" role="tabpanel" hidden></div>
+  </aside>
 
-    <div class="toolbar-right">
-      <div class="dict-badges" id="dict-badges"></div>
-    </div>
-  </header>
-
-  <!-- ── PDF viewport ──────────────────────────────────────────────────────── -->
-  <main class="pdf-container" id="pdf-container">
+  <main class="pdf-container" id="pdf-container" tabindex="0">
     <div class="empty-state" id="empty-state">
-      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-        <polyline points="14,2 14,8 20,8"/>
-        <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
-        <polyline points="10,9 9,9 8,9"/>
-      </svg>
-      <p>Open a PDF to get started</p>
-      <p class="hint">Double-click any word to look it up</p>
+      <div class="empty-mark" aria-hidden="true">
+        <span class="empty-mark-word">gloss</span>
+        <span class="empty-mark-rule"></span>
+        <span class="empty-mark-note">a note explaining a difficult word</span>
+      </div>
+      <h1 class="empty-title">Read closely.</h1>
+      <p class="empty-sub">Open a PDF, then select any word — in English or Devanagari —
+        to see it explained without leaving the page.</p>
+      <button class="btn btn--primary btn--lg" id="open-pdf-cta">Open a PDF</button>
+      <div class="recent-list" id="recent-list"></div>
     </div>
-
-    <!-- page wrappers are injected here dynamically by renderAllPages() -->
+    <div class="pages" id="pages"></div>
   </main>
+</div>
 
-  <!-- ── Definition popup ──────────────────────────────────────────────────── -->
-  <div class="popup" id="popup" role="tooltip" aria-live="polite" style="display:none">
-    <button class="popup-close" id="popup-close" aria-label="Close">×</button>
-    <div class="popup-content" id="popup-content"></div>
+</div><!-- /.app-shell -->
+
+<div class="loading-indicator" id="loading-indicator" hidden>
+  <span class="spinner"></span> Opening document…
+</div>
+
+<!-- ── Definition gloss ────────────────────────────────────────────────────── -->
+<div class="popup" id="popup" role="dialog" aria-label="Definition" hidden>
+  <div class="popup-head">
+    <button class="icon-btn icon-btn--sm" id="popup-back" title="Back" aria-label="Back" hidden></button>
+    <h2 class="popup-word" id="popup-word"></h2>
+    <button class="icon-btn icon-btn--sm" id="popup-pin" title="Keep this open" aria-label="Keep this open" aria-pressed="false"></button>
+    <button class="icon-btn icon-btn--sm" id="popup-close" title="Close (Escape)" aria-label="Close definition"></button>
   </div>
+  <div class="popup-tabs" id="popup-tabs" role="tablist" hidden></div>
+  <div class="popup-body" id="popup-body"></div>
+</div>
 
-  <!-- ── Preferences modal ─────────────────────────────────────────────────── -->
-  <div class="modal-overlay" id="prefs-overlay" style="display:none" role="dialog" aria-modal="true">
-    <div class="modal">
-      <div class="modal-header">
-        <h2>Preferences</h2>
-        <button class="modal-close" id="prefs-close" aria-label="Close preferences">×</button>
-      </div>
-      <div class="modal-layout">
-        <nav class="modal-nav">
-          <button class="modal-nav-btn active" data-section="dictionaries">📚 Dictionaries</button>
-          <button class="modal-nav-btn" data-section="wikipedia">🌐 Wikipedia</button>
-          <button class="modal-nav-btn" data-section="theme">🎨 Theme</button>
-          <button class="modal-nav-btn" data-section="session">📊 Session</button>
-        </nav>
-        <div class="modal-body" id="prefs-body"></div>
-      </div>
+<!-- ── Preferences ─────────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="prefs-overlay" hidden>
+  <div class="modal" id="prefs-modal" role="dialog" aria-modal="true" aria-label="Preferences">
+    <div class="modal-head">
+      <h2>Preferences</h2>
+      <button class="icon-btn icon-btn--sm" id="prefs-close" aria-label="Close preferences"></button>
+    </div>
+    <div class="modal-layout">
+      <nav class="modal-nav" id="prefs-nav">
+        <button class="modal-nav-btn modal-nav-btn--active" data-section="dictionaries">Dictionaries</button>
+        <button class="modal-nav-btn" data-section="lookup">Lookup</button>
+        <button class="modal-nav-btn" data-section="appearance">Appearance</button>
+        <button class="modal-nav-btn" data-section="session">Session</button>
+      </nav>
+      <div class="modal-body" id="prefs-body"></div>
     </div>
   </div>
+</div>
 
-  <!-- ── Read-mode floating bar ────────────────────────────────────────────── -->
-  <div id="read-mode-bar" style="display:none" aria-live="polite">
-    <span id="read-page-display">—</span>
-    <button id="exit-read-mode">✕ Exit Read Mode</button>
-  </div>
+<!-- ── Password ────────────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="password-overlay" hidden>
+  <form class="modal modal--sm" id="password-form" role="dialog" aria-modal="true" aria-label="Password required">
+    <div class="modal-head"><h2>This document is protected</h2></div>
+    <div class="modal-body">
+      <p class="prefs-hint">Enter the password to open it. Gloss never stores document passwords.</p>
+      <input type="password" id="password-input" class="text-input" aria-label="Document password" autocomplete="off" />
+      <p class="prefs-error" id="password-error" hidden>That password didn’t work. Try again.</p>
+      <div class="prefs-actions">
+        <button type="submit" class="btn btn--primary">Open</button>
+        <button type="button" class="btn" id="password-cancel">Cancel</button>
+      </div>
+    </div>
+  </form>
+</div>
 
-  <script src="renderer.js" type="module"></script>
+<div class="drop-overlay" id="drop-overlay" hidden>
+  <div class="drop-card">Drop a PDF to open it</div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="js/app.js" type="module"></script>
 </body>
 </html>

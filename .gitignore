@@ -4,10 +4,12 @@ CLAUDE.md
 # Dependencies
 node_modules/
 
-# Build output
+# Build output (build/ itself holds packaging resources and IS tracked)
 dist/
 out/
-build/
+
+# Generated from assets/icon.png by scripts/make-icons.js
+build/icons/
 
 # Electron builder cache
 .cache/
@@ -39,3 +41,13 @@ desktop.ini
 
 # User preferences (generated at runtime, not source)
 preferences.json
+
+# Test fixtures are generated (npm run fixtures), not committed
+test/fixtures/
+
+# Screenshots from visual verification
+test/screenshots/
+
+# Playwright
+test-results/
+playwright-report/

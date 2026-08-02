@@ -1,0 +1,613 @@
+/**
+ * viewer.js — PDF document lifecycle and the virtualized page renderer.
+ *
+ * Responsibilities: open/close documents (incl. password flow), bounded
+ * lazy rendering with cancellation, zoom (fit-width / fit-page / custom)
+ * with anchored scrolling, page-text caching for search & lookup quality,
+ * and clean teardown so stale async work can never touch a newer document.
+ */
+
+import * as pdfjsLib from '../../node_modules/pdfjs-dist/build/pdf.mjs';
+import { refs, debounce } from './dom.js';
+import { assessTextQuality } from './text.js';
+
+const PDFJS_BASE = new URL('../../node_modules/pdfjs-dist/', import.meta.url);
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('build/pdf.worker.mjs', PDFJS_BASE).href;
+
+export const RENDER_BUFFER = 2;       // pages beyond the viewport to pre-render
+export const DESTROY_DISTANCE = 5;    // rendered pages farther than this are recycled
+export const ZOOM_MIN = 0.25;
+export const ZOOM_MAX = 4;
+export const ZOOM_STEP = 1.1;
+const MAX_CANVAS_PIXELS = 16 * 1024 * 1024; // per-page device-pixel budget
+const PAGE_HORIZONTAL_MARGIN = 48;          // must match --page-margin CSS total
+const RERENDER_DEBOUNCE_MS = 140;
+const QUALITY_SAMPLE_PAGES = 4;
+
+const state = {
+  doc: null,
+  loadingTask: null,
+  generation: 0,     // bumped whenever the mounted document changes
+  openSequence: 0,   // bumped per open attempt, including ones that fail
+  total: 0,
+  current: 1,
+  zoomMode: 'fit-width',
+  zoomScale: 1,
+  baseWidth: 612,   // page 1 at scale 1 (US Letter fallback)
+  baseHeight: 792,
+  pageDims: new Map(),     // page -> {w, h} at scale 1
+  renderTasks: new Map(),  // page -> RenderTask
+  textCache: new Map(),    // page -> { text, items: [{start, end}] }
+  visiblePages: new Set(),
+  pageObserver: null,
+  lazyObserver: null,
+};
+
+const listeners = new Map();
+export function on(event, cb) {
+  if (!listeners.has(event)) listeners.set(event, new Set());
+  listeners.get(event).add(cb);
+  return () => listeners.get(event).delete(cb);
+}
+function emit(event, payload) {
+  for (const cb of listeners.get(event) || []) cb(payload);
+}
+
+// ── Introspection ─────────────────────────────────────────────────────────────
+
+export const hasDocument = () => !!state.doc;
+/** Identity of the mounted document; used to discard work from an older one. */
+export const documentGeneration = () => state.generation;
+export const pageCount = () => state.total;
+export const currentPage = () => state.current;
+export const zoomMode = () => state.zoomMode;
+export const zoomScale = () => state.zoomScale;
+
+// ── Geometry ──────────────────────────────────────────────────────────────────
+
+function dimsFor(n) {
+  return state.pageDims.get(n) || { w: state.baseWidth, h: state.baseHeight };
+}
+
+function computeFitScale(mode) {
+  const container = refs.container();
+  const availW = Math.max(120, container.clientWidth - PAGE_HORIZONTAL_MARGIN);
+  const widthScale = availW / state.baseWidth;
+  if (mode === 'fit-page') {
+    const availH = Math.max(120, container.clientHeight - 40);
+    return Math.min(widthScale, availH / state.baseHeight);
+  }
+  return widthScale;
+}
+
+function sizeWrapper(wrapper, n) {
+  const { w, h } = dimsFor(n);
+  wrapper.style.width = `${Math.floor(w * state.zoomScale)}px`;
+  wrapper.style.height = `${Math.floor(h * state.zoomScale)}px`;
+}
+
+// ── Placeholders & observers ──────────────────────────────────────────────────
+
+function makePlaceholder(n) {
+  const el = document.createElement('div');
+  el.className = 'page-placeholder';
+  el.textContent = String(n);
+  return el;
+}
+
+function buildPlaceholders() {
+  const pages = refs.pages();
+  const frag = document.createDocumentFragment();
+  for (let n = 1; n <= state.total; n++) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'pdf-page-wrapper';
+    wrapper.dataset.pageNumber = String(n);
+    wrapper.dataset.rendered = 'false';
+    sizeWrapper(wrapper, n);
+    wrapper.appendChild(makePlaceholder(n));
+    frag.appendChild(wrapper);
+  }
+  pages.replaceChildren(frag);
+}
+
+function setupObservers() {
+  const container = refs.container();
+
+  state.pageObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      const n = Number(entry.target.dataset.pageNumber);
+      if (entry.isIntersecting) state.visiblePages.add(n);
+      else state.visiblePages.delete(n);
+    }
+    if (state.visiblePages.size > 0) {
+      const next = Math.min(...state.visiblePages);
+      if (next !== state.current) {
+        state.current = next;
+        emit('pagechanged', next);
+      }
+    }
+  }, { root: container, threshold: 0.08 });
+
+  state.lazyObserver = new IntersectionObserver((entries) => {
+    let nearest = null;
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      const n = Number(entry.target.dataset.pageNumber);
+      nearest = nearest === null ? n : Math.min(nearest, n);
+      for (let i = n - RENDER_BUFFER; i <= n + RENDER_BUFFER; i++) {
+        if (i >= 1 && i <= state.total) renderPage(i);
+      }
+    }
+    if (nearest !== null) destroyFarPages(nearest);
+  }, { root: container, rootMargin: '600px 0px 600px 0px', threshold: 0 });
+
+  for (const wrapper of refs.pages().children) {
+    state.pageObserver.observe(wrapper);
+    state.lazyObserver.observe(wrapper);
+  }
+}
+
+// ── Rendering ─────────────────────────────────────────────────────────────────
+
+function wrapperFor(n) {
+  return refs.pages().querySelector(`.pdf-page-wrapper[data-page-number="${n}"]`);
+}
+
+export function renderPage(n) {
+  const wrapper = wrapperFor(n);
+  if (!wrapper) return Promise.resolve();
+  if (wrapper.dataset.rendered === 'true') {
+    if (wrapper.dataset.stale === '1') return rerenderPage(n);
+    return wrapper._renderPromise || Promise.resolve();
+  }
+  wrapper.dataset.rendered = 'true';
+  delete wrapper.dataset.stale;
+  const gen = state.generation;
+
+  wrapper._renderPromise = (async () => {
+    let task = null;
+    try {
+      const page = await state.doc.getPage(n);
+      if (gen !== state.generation) return;
+
+      if (!state.pageDims.has(n)) {
+        const vp1 = page.getViewport({ scale: 1 });
+        state.pageDims.set(n, { w: vp1.width, h: vp1.height });
+      }
+      const viewport = page.getViewport({ scale: state.zoomScale });
+      sizeWrapper(wrapper, n);
+
+      const dpr = window.devicePixelRatio || 1;
+      // The pixel budget is a hard ceiling, not a preference: a large-format
+      // page (a plan or poster) at high zoom must not be allowed to request
+      // a bitmap the GPU will refuse to allocate.
+      const budget = Math.sqrt(MAX_CANVAS_PIXELS / Math.max(1, viewport.width * viewport.height));
+      const ratio = Math.min(dpr, budget);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.floor(viewport.width * ratio);
+      canvas.height = Math.floor(viewport.height * ratio);
+      canvas.style.width = `${Math.floor(viewport.width)}px`;
+      canvas.style.height = `${Math.floor(viewport.height)}px`;
+      const ctx = canvas.getContext('2d', { alpha: false });
+      ctx.scale(ratio, ratio);
+
+      task = page.render({ canvasContext: ctx, viewport });
+      state.renderTasks.set(n, task);
+      await task.promise;
+      state.renderTasks.delete(n);
+      if (gen !== state.generation || wrapper.dataset.rendered !== 'true') return;
+
+      const textContent = await page.getTextContent();
+      if (gen !== state.generation) return;
+      cacheText(n, textContent);
+
+      const textLayerDiv = document.createElement('div');
+      textLayerDiv.className = 'pdf-text-layer';
+      textLayerDiv.style.setProperty('--scale-factor', String(viewport.scale));
+      const textLayer = new pdfjsLib.TextLayer({
+        textContentSource: textContent,
+        container: textLayerDiv,
+        viewport,
+      });
+      await textLayer.render();
+      if (gen !== state.generation || wrapper.dataset.rendered !== 'true') return;
+
+      wrapper.dataset.renderedScale = String(state.zoomScale);
+      wrapper.replaceChildren(canvas, textLayerDiv);
+      wrapper._textDivs = textLayer.textDivs;
+      emit('pagerendered', n);
+    } catch (err) {
+      state.renderTasks.delete(n);
+      if (gen === state.generation && wrapper.isConnected) {
+        wrapper.dataset.rendered = 'false';
+        if (!err || err.name !== 'RenderingCancelledException') {
+          console.warn(`gloss: page ${n} render failed:`, err?.message);
+        }
+      }
+    }
+  })();
+  return wrapper._renderPromise;
+}
+
+function destroyPage(wrapper) {
+  const n = Number(wrapper.dataset.pageNumber);
+  const task = state.renderTasks.get(n);
+  if (task) { task.cancel(); state.renderTasks.delete(n); }
+  wrapper.replaceChildren(makePlaceholder(n));
+  wrapper.dataset.rendered = 'false';
+  delete wrapper.dataset.stale;
+  delete wrapper.dataset.renderedScale;
+  delete wrapper._textDivs;
+  delete wrapper._renderPromise;
+  emit('pagedestroyed', n);
+}
+
+function rerenderPage(n) {
+  const wrapper = wrapperFor(n);
+  if (!wrapper) return Promise.resolve();
+  destroyPage(wrapper);
+  sizeWrapper(wrapper, n);
+  return renderPage(n);
+}
+
+function destroyFarPages(nearPage) {
+  for (const wrapper of refs.pages().querySelectorAll('.pdf-page-wrapper[data-rendered="true"]')) {
+    const n = Number(wrapper.dataset.pageNumber);
+    if (Math.abs(n - nearPage) > DESTROY_DISTANCE) destroyPage(wrapper);
+  }
+}
+
+/** Rendered page count — exposed for tests asserting bounded memory. */
+export function renderedPageCount() {
+  return refs.pages().querySelectorAll('.pdf-page-wrapper[data-rendered="true"]').length;
+}
+
+/** Live text divs for a rendered page (search highlighting). */
+export function textDivsFor(n) {
+  const wrapper = wrapperFor(n);
+  return wrapper && wrapper.dataset.rendered === 'true' ? (wrapper._textDivs || null) : null;
+}
+
+// ── Page text cache (search, quality assessment) ──────────────────────────────
+
+function cacheText(n, textContent) {
+  if (state.textCache.has(n)) return;
+  let text = '';
+  const items = [];
+  for (const item of textContent.items) {
+    const start = text.length;
+    text += item.str;
+    items.push({ start, end: text.length });
+  }
+  // Item strings are concatenated with nothing between them. pdf.js splits
+  // items on its own layout heuristics, and those splits regularly land
+  // mid-word (a Devanagari conjunct, a hyphenated line break). Inserting a
+  // separator at item or line boundaries would make such words unfindable,
+  // which matters far more than the rare run-together across a real line
+  // break. Offsets stay contiguous, so search ranges map back to items
+  // exactly.
+  state.textCache.set(n, { text, items });
+}
+
+/** Synchronous access to already-extracted page text (or null). */
+export function getPageTextCached(n) {
+  return state.textCache.get(n) || null;
+}
+
+/** Extract (and cache) the text of a page without rendering it. */
+export async function getPageText(n) {
+  if (state.textCache.has(n)) return state.textCache.get(n);
+  const gen = state.generation;
+  const page = await state.doc.getPage(n);
+  const textContent = await page.getTextContent();
+  if (gen !== state.generation) return { text: '', items: [] };
+  cacheText(n, textContent);
+  return state.textCache.get(n);
+}
+
+async function assessDocumentText() {
+  const gen = state.generation;
+  const sample = [];
+  const pagesToSample = Math.min(QUALITY_SAMPLE_PAGES, state.total);
+  for (let n = 1; n <= pagesToSample; n++) {
+    const { text } = await getPageText(n);
+    if (gen !== state.generation) return;
+    sample.push(text);
+  }
+  if (state.total > QUALITY_SAMPLE_PAGES + 1) {
+    const mid = Math.ceil(state.total / 2);
+    const { text } = await getPageText(mid);
+    if (gen !== state.generation) return;
+    sample.push(text);
+  }
+  emit('textquality', assessTextQuality(sample.join('\n')));
+}
+
+// ── Zoom ──────────────────────────────────────────────────────────────────────
+
+const rerenderVisibleDebounced = debounce(() => {
+  const container = refs.container();
+  const top = container.scrollTop;
+  const bottom = top + container.clientHeight;
+  for (const wrapper of refs.pages().children) {
+    if (wrapper.dataset.stale !== '1') continue;
+    const yTop = wrapper.offsetTop;
+    const yBottom = yTop + wrapper.offsetHeight;
+    const margin = container.clientHeight; // one screen of slack
+    if (yBottom >= top - margin && yTop <= bottom + margin) {
+      rerenderPage(Number(wrapper.dataset.pageNumber));
+    }
+  }
+}, RERENDER_DEBOUNCE_MS);
+
+/**
+ * Set zoom. anchor (viewport-relative {x, y}) defaults to the container
+ * center; wheel zoom passes the cursor so the point under it stays put.
+ */
+export function setZoom(mode, explicitScale = null, anchor = null) {
+  if (!state.doc) return;
+  const container = refs.container();
+
+  let newScale;
+  if (mode === 'custom') {
+    newScale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, explicitScale ?? state.zoomScale));
+  } else {
+    newScale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, computeFitScale(mode)));
+  }
+  const ratio = newScale / state.zoomScale;
+  const modeChanged = mode !== state.zoomMode;
+  if (!modeChanged && Math.abs(ratio - 1) < 0.0005) return;
+
+  state.zoomMode = mode;
+  state.zoomScale = newScale;
+
+  const rect = container.getBoundingClientRect();
+  const anchorY = anchor ? anchor.y - rect.top : container.clientHeight / 2;
+  const anchorX = anchor ? anchor.x - rect.left : container.clientWidth / 2;
+  const targetScrollTop = (container.scrollTop + anchorY) * ratio - anchorY;
+  const targetScrollLeft = (container.scrollLeft + anchorX) * ratio - anchorX;
+
+  for (const wrapper of refs.pages().children) {
+    const n = Number(wrapper.dataset.pageNumber);
+    sizeWrapper(wrapper, n);
+    if (wrapper.dataset.rendered === 'true') {
+      const renderedScale = Number(wrapper.dataset.renderedScale) || newScale;
+      const factor = newScale / renderedScale;
+      const canvas = wrapper.querySelector('canvas');
+      const { w, h } = dimsFor(n);
+      if (canvas) {
+        canvas.style.width = `${Math.floor(w * newScale)}px`;
+        canvas.style.height = `${Math.floor(h * newScale)}px`;
+      }
+      const textLayer = wrapper.querySelector('.pdf-text-layer');
+      if (textLayer) textLayer.style.transform = factor === 1 ? '' : `scale(${factor})`;
+      if (Math.abs(factor - 1) > 0.0005) wrapper.dataset.stale = '1';
+    }
+  }
+
+  container.scrollTop = targetScrollTop;
+  container.scrollLeft = targetScrollLeft;
+
+  emit('zoomchanged', { mode: state.zoomMode, scale: state.zoomScale });
+  rerenderVisibleDebounced();
+}
+
+export function zoomIn(anchor) { setZoom('custom', state.zoomScale * ZOOM_STEP, anchor); }
+export function zoomOut(anchor) { setZoom('custom', state.zoomScale / ZOOM_STEP, anchor); }
+
+/** Recompute fit scales after a container resize. */
+export function handleResize() {
+  if (!state.doc) return;
+  if (state.zoomMode === 'fit-width' || state.zoomMode === 'fit-page') {
+    setZoom(state.zoomMode);
+  }
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+
+export function goToPage(n, { instant = false } = {}) {
+  const clamped = Math.min(state.total, Math.max(1, Math.round(n)));
+  const wrapper = wrapperFor(clamped);
+  if (!wrapper) return;
+  const container = refs.container();
+  container.scrollTo({
+    top: wrapper.offsetTop - 8,
+    behavior: instant ? 'auto' : 'smooth',
+  });
+}
+
+export async function ensureRendered(n) {
+  await renderPage(n);
+}
+
+export function scrollFraction() {
+  const container = refs.container();
+  const max = container.scrollHeight - container.clientHeight;
+  return max > 0 ? container.scrollTop / max : 0;
+}
+
+function restoreScrollFraction(fraction) {
+  const container = refs.container();
+  const max = container.scrollHeight - container.clientHeight;
+  container.scrollTop = Math.max(0, Math.min(1, fraction)) * max;
+}
+
+// ── Document lifecycle ────────────────────────────────────────────────────────
+
+export function closeDocument() {
+  state.generation++;
+  rerenderVisibleDebounced.cancel();
+  for (const task of state.renderTasks.values()) task.cancel();
+  state.renderTasks.clear();
+  state.pageObserver?.disconnect();
+  state.lazyObserver?.disconnect();
+  state.pageObserver = null;
+  state.lazyObserver = null;
+  state.visiblePages.clear();
+  state.textCache.clear();
+  state.pageDims.clear();
+  refs.pages().replaceChildren();
+
+  if (state.loadingTask) {
+    state.loadingTask.destroy().catch(() => {});
+    state.loadingTask = null;
+  }
+  const doc = state.doc;
+  state.doc = null;
+  state.total = 0;
+  state.current = 1;
+  if (doc) doc.destroy().catch(() => {});
+  emit('documentclosed');
+}
+
+/**
+ * Open a document from bytes.
+ * @param {Uint8Array} data
+ * @param {{name:string, path:string, restore:object|null,
+ *          requestPassword:(retry:boolean)=>Promise<string|null>}} opts
+ * @returns {Promise<{ok:true}|{ok:false, code:string, message:string}>}
+ */
+export async function openDocument(data, opts) {
+  // The candidate is fully validated *before* the current document is torn
+  // down: opening a damaged file must not cost the user the document they
+  // are already reading.
+  const openId = ++state.openSequence;
+
+  let passwordCanceled = false;
+  const loadingTask = pdfjsLib.getDocument({
+    data,
+    cMapUrl: new URL('cmaps/', PDFJS_BASE).href,
+    cMapPacked: true,
+    standardFontDataUrl: new URL('standard_fonts/', PDFJS_BASE).href,
+    isEvalSupported: false, // lets the CSP drop 'unsafe-eval'
+  });
+
+  loadingTask.onPassword = (updatePassword, reason) => {
+    const retry = reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD;
+    Promise.resolve(opts.requestPassword(retry)).then((password) => {
+      if (password === null || password === undefined || openId !== state.openSequence) {
+        passwordCanceled = true;
+        loadingTask.destroy().catch(() => {});
+      } else {
+        updatePassword(password);
+      }
+    });
+  };
+
+  const abandon = (code, message) => {
+    loadingTask.destroy().catch(() => {});
+    return { ok: false, code, message };
+  };
+
+  let doc;
+  let page1;
+  let vp1;
+  try {
+    doc = await loadingTask.promise;
+    if (openId !== state.openSequence) {
+      doc.destroy().catch(() => {});
+      return abandon('superseded', '');
+    }
+    // Reading page 1 is part of validation: a file can pass the header check
+    // and still fail here.
+    page1 = await doc.getPage(1);
+    vp1 = page1.getViewport({ scale: 1 });
+  } catch (err) {
+    if (doc) doc.destroy().catch(() => {});
+    if (openId !== state.openSequence) return abandon('superseded', '');
+    if (passwordCanceled) return abandon('password_canceled', '');
+    const name = err?.name || '';
+    if (name === 'InvalidPDFException') {
+      return abandon('corrupt', 'This file is not a valid PDF or is damaged.');
+    }
+    return abandon('open_failed', err?.message || 'The document could not be opened.');
+  }
+  if (openId !== state.openSequence) {
+    doc.destroy().catch(() => {});
+    return abandon('superseded', '');
+  }
+
+  // Validated — now it is safe to replace the current document. Everything
+  // from here is synchronous; later async work (page rendering, text
+  // assessment) captures state.generation itself.
+  closeDocument();
+  state.loadingTask = loadingTask;
+  state.doc = doc;
+  state.total = doc.numPages;
+  state.baseWidth = vp1.width;
+  state.baseHeight = vp1.height;
+  state.pageDims.set(1, { w: vp1.width, h: vp1.height });
+
+  const restore = opts.restore || null;
+  state.zoomMode = restore?.zoomMode || 'fit-width';
+  state.zoomScale = state.zoomMode === 'custom'
+    ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, restore?.zoomScale || 1))
+    : computeFitScale(state.zoomMode);
+
+  buildPlaceholders();
+  setupObservers();
+
+  if (restore && restore.scrollFraction > 0) {
+    restoreScrollFraction(restore.scrollFraction);
+  } else if (restore && restore.page > 1) {
+    goToPage(restore.page, { instant: true });
+  } else {
+    refs.container().scrollTop = 0;
+  }
+
+  emit('documentopened', { name: opts.name, path: opts.path, total: state.total });
+  emit('pagechanged', state.current);
+  emit('zoomchanged', { mode: state.zoomMode, scale: state.zoomScale });
+
+  assessDocumentText().catch(() => {});
+  return { ok: true };
+}
+
+/** Document outline (or null). Items: {title, dest, items[]}. */
+export async function getOutline() {
+  if (!state.doc) return null;
+  try {
+    return await state.doc.getOutline();
+  } catch {
+    return null;
+  }
+}
+
+/** Resolve an outline destination to a page number (1-based) or null. */
+export async function resolveDestination(dest) {
+  if (!state.doc) return null;
+  try {
+    const explicit = typeof dest === 'string' ? await state.doc.getDestination(dest) : dest;
+    if (!Array.isArray(explicit) || explicit.length === 0) return null;
+    const pageIndex = await state.doc.getPageIndex(explicit[0]);
+    return pageIndex + 1;
+  } catch {
+    return null;
+  }
+}
+
+/** Render a page thumbnail; returns an object URL (caller revokes). */
+export async function renderThumbnail(n, cssWidth) {
+  if (!state.doc) return null;
+  const gen = state.generation;
+  try {
+    const page = await state.doc.getPage(n);
+    if (gen !== state.generation) return null;
+    const vp1 = page.getViewport({ scale: 1 });
+    const scale = cssWidth / vp1.width;
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    const viewport = page.getViewport({ scale: scale * ratio });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    const ctx = canvas.getContext('2d', { alpha: false });
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    if (gen !== state.generation) return null;
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.72));
+    canvas.width = canvas.height = 0;
+    return blob ? URL.createObjectURL(blob) : null;
+  } catch {
+    return null;
+  }
+}
