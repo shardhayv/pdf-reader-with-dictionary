@@ -56,9 +56,25 @@ function decodeURIComponentSafe(value) {
   try { return decodeURIComponent(value); } catch { return value; }
 }
 
+/**
+ * Remove presentation-only markup before DOMPurify parses the definition.
+ *
+ * DOMPurify remains the security boundary and removes these again. This small
+ * prefilter exists for a different reason: Chromium applies the document CSP
+ * while parsing detached dictionary HTML, so a harmless `style` attribute in
+ * a real MDX produces a console violation even though DOMPurify discards it
+ * before insertion. Removing only style blocks/attributes up front keeps real
+ * dictionaries quiet without trusting or trying to interpret their CSS.
+ */
+function stripPresentationMarkup(html) {
+  return String(html)
+    .replace(/<style\b[^>]*>[\s\S]*?(?:<\/style\s*>|$)/gi, '')
+    .replace(/\sstyle\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+)/gi, '');
+}
+
 /** Exported for security regression tests. */
 export function sanitizeDefinition(html) {
-  return DOMPurify.sanitize(String(html), SANITIZE_CONFIG);
+  return DOMPurify.sanitize(stripPresentationMarkup(html), SANITIZE_CONFIG);
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────

@@ -9,7 +9,9 @@
 ![Electron](https://img.shields.io/badge/Electron-33-47848F?style=flat&logo=electron&logoColor=white)
 ![PDF.js](https://img.shields.io/badge/PDF.js-4.10-orange?style=flat)
 ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64-E95420?style=flat&logo=linux&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-green?style=flat)
+![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat)
+
+Created and maintained by **[Shardhay Vatshyayan](https://github.com/shardhayv)**.
 
 </div>
 
@@ -106,7 +108,7 @@ npm run dist:dir        # unpacked build into dist/linux-unpacked/
 Install and run the `.deb`:
 
 ```bash
-sudo apt install ./dist/gloss_2.1.0_amd64.deb
+sudo apt install ./dist/gloss_2.1.1_amd64.deb
 gloss                      # or launch from your applications menu
 gloss ~/Documents/paper.pdf
 ```
@@ -129,9 +131,9 @@ for Ubuntu and Debian.
 1. **Open a PDF** — the toolbar button, `Ctrl+O`, drag a file onto the window,
    pass a path on the command line, or open it from your file manager.
 2. **Add dictionaries** — Preferences → Dictionaries → *Add dictionaries…* and
-   pick one or more `.mdx` files. Free MDX dictionaries (Oxford, Merriam-Webster,
-   WordNet, and Hindi/Nepali dictionaries) are widely available; Gloss does not
-   bundle any.
+   pick one or more lawfully obtained `.mdx` files. Open, public-domain, and
+   personally licensed dictionaries can all be used; Gloss does not bundle or
+   redistribute dictionary data.
 
    You can also add a **per-book glossary** — a small JSON file for the words a
    general dictionary cannot help with. Build a draft from the book itself:
@@ -303,9 +305,16 @@ No frontend framework and no bundler — plain ES modules in the renderer.
 
 ---
 
-## License
+## License and authorship
 
-MIT — see [LICENSE](LICENSE).
+Copyright © 2026 **Shardhay Vatshyayan** (`@shardhayv`). Gloss 2.1.1 and later
+is free software licensed under the **GNU Affero General Public License v3.0
+only** — see [LICENSE](LICENSE). This keeps the application compatible with the
+AGPL-licensed `js-mdict` 7 runtime it distributes. Earlier revisions remain
+available under the license stated in those revisions.
+
+Runtime and development dependencies retain their own licenses; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 Gloss bundles no dictionary data. Dictionaries and glossaries you load are
 yours, and their contents are treated as untrusted input regardless of origin:
@@ -314,6 +323,7 @@ reach the network — including glossaries you wrote yourself.
 
 <div align="center">
 
-Built by **Shardhay Vatshyayan** — because reading should be effortless.
+Built by **[Shardhay Vatshyayan](https://github.com/shardhayv)** — because
+reading should be effortless.
 
 </div>

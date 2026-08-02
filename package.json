@@ -1,12 +1,21 @@
 {
   "name": "gloss",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "A quiet English and Devanagari PDF reader with MDX dictionaries and per-book JSON glossaries",
   "author": {
     "name": "Shardhay Vatshyayan",
-    "email": "watsshardhay@gmail.com"
+    "email": "88810695+shardhayv@users.noreply.github.com",
+    "url": "https://github.com/shardhayv"
   },
-  "license": "MIT",
+  "homepage": "https://github.com/shardhayv/pdf-reader-with-dictionary#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shardhayv/pdf-reader-with-dictionary.git"
+  },
+  "bugs": {
+    "url": "https://github.com/shardhayv/pdf-reader-with-dictionary/issues"
+  },
+  "license": "AGPL-3.0-only",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -39,6 +48,8 @@
     "productName": "Gloss",
     "copyright": "Copyright © 2026 Shardhay Vatshyayan",
     "files": [
+      "LICENSE",
+      "THIRD_PARTY_NOTICES.md",
       "main.js",
       "preload.js",
       "about.html",

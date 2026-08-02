@@ -99,6 +99,28 @@ test('hostile dictionary HTML is neutralized', async () => {
   expect(benign.text).toContain('nest');
 });
 
+test('dictionary presentation styles are discarded without CSP console noise', async () => {
+  const result = await page.evaluate(async () => {
+    const { sanitizeDefinition } = await import('./js/popup.js');
+    const violations = [];
+    const onViolation = event => violations.push(event.violatedDirective);
+    document.addEventListener('securitypolicyviolation', onViolation);
+
+    const clean = sanitizeDefinition(
+      '<style>.headword{color:red}</style>' +
+      '<div class="headword" style="font-size:42px">readable</div>'
+    );
+    await new Promise(requestAnimationFrame);
+    document.removeEventListener('securitypolicyviolation', onViolation);
+    return { clean, violations };
+  });
+
+  expect(result.clean).toContain('readable');
+  expect(result.clean).not.toMatch(/<style|\sstyle=/i);
+  expect(result.violations).not.toContain('style-src-attr');
+  expect(result.violations).not.toContain('style-src-elem');
+});
+
 test('safe links become inert data attributes, not navigable hrefs', async () => {
   const result = await page.evaluate(async () => {
     const { sanitizeDefinition } = await import('./js/popup.js');
