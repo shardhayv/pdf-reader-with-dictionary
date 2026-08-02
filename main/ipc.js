@@ -14,7 +14,7 @@ const wiki = require('./wiki');
 const windows = require('./windows');
 const { guarded } = require('./security');
 
-/** webContents.id -> realpath of the document it currently displays. */
+/** webContents.id -> { path, fingerprint } for the displayed document. */
 const currentDocByContents = new Map();
 
 /**
@@ -23,6 +23,7 @@ const currentDocByContents = new Map();
  * once it actually opens, so a damaged PDF never pollutes it.
  */
 const pendingDocByContents = new Map();
+const trackedContents = new Set();
 
 const MAX_URL_LENGTH = 2048;
 
@@ -49,7 +50,11 @@ function assertString(value, max) {
 async function openAndTrack(webContents, requestedPath) {
   const result = await paths.readPdfSafely(requestedPath);
   if (!result.ok) return result;
+  if (webContents.isDestroyed()) {
+    return { ok: false, code: 'window_closed', message: 'The Gloss window was closed before the PDF finished opening.' };
+  }
 
+  trackContentsLifetime(webContents);
   pendingDocByContents.set(webContents.id, { realPath: result.realPath, name: result.name });
 
   return {
@@ -62,12 +67,43 @@ async function openAndTrack(webContents, requestedPath) {
   };
 }
 
+function trackContentsLifetime(webContents) {
+  if (trackedContents.has(webContents.id)) return;
+  trackedContents.add(webContents.id);
+  webContents.once('destroyed', () => {
+    trackedContents.delete(webContents.id);
+    pendingDocByContents.delete(webContents.id);
+    currentDocByContents.delete(webContents.id);
+  });
+}
+
 /** Main-initiated open (CLI arg, second instance, file association). */
 async function openFromMain(requestedPath) {
   const win = windows.getMainWindow();
   if (!win) return;
-  const payload = await openAndTrack(win.webContents, requestedPath);
-  win.webContents.send('gloss:open-file', payload);
+  let payload;
+  try {
+    payload = await openAndTrack(win.webContents, requestedPath);
+  } catch (err) {
+    console.error('gloss: main-initiated open failed:', err);
+    payload = {
+      ok: false,
+      code: 'open_failed',
+      message: 'Gloss could not read that PDF. The document already open was not changed.',
+    };
+  }
+  if (win.isDestroyed() || win.webContents.isDestroyed()) return;
+  try {
+    win.webContents.send('gloss:open-file', payload);
+  } catch (error) {
+    console.error('gloss: could not deliver an opened PDF to the window:', error?.message || error);
+  }
+}
+
+/** Last confirmed document for a window, used only to recover a crashed renderer. */
+function currentDocumentPath(webContents) {
+  if (!webContents || webContents.isDestroyed()) return null;
+  return currentDocByContents.get(webContents.id)?.path || null;
 }
 
 function register() {
@@ -108,12 +144,14 @@ function register() {
   // ── Per-document state ─────────────────────────────────────────────────────
   // Called once the renderer has parsed and displayed the document. Only now
   // does it become the current document and enter the recent list.
-  ipcMain.handle('doc:confirmOpen', guarded((event, docPath) => {
+  ipcMain.handle('doc:confirmOpen', guarded((event, docPath, fingerprint = '') => {
     assertString(docPath, 4096);
+    if (typeof fingerprint !== 'string' || fingerprint.length > 200) fingerprint = '';
     const pending = pendingDocByContents.get(event.sender.id);
     if (!pending || pending.realPath !== docPath) return { ok: false };
     pendingDocByContents.delete(event.sender.id);
-    currentDocByContents.set(event.sender.id, pending.realPath);
+    trackContentsLifetime(event.sender);
+    currentDocByContents.set(event.sender.id, { path: pending.realPath, fingerprint });
     store.updateDocState(pending.realPath, { name: pending.name });
     windows.buildMenu(); // refresh Open Recent
     return { ok: true };
@@ -121,7 +159,7 @@ function register() {
 
   ipcMain.handle('doc:updateState', guarded((event, docPath, patch) => {
     assertString(docPath, 4096);
-    if (currentDocByContents.get(event.sender.id) !== docPath) return { ok: false };
+    if (currentDocByContents.get(event.sender.id)?.path !== docPath) return { ok: false };
     if (!patch || typeof patch !== 'object') return { ok: false };
     const { page, zoomMode, zoomScale, scrollFraction } = patch;
     store.updateDocState(docPath, { page, zoomMode, zoomScale, scrollFraction });
@@ -139,19 +177,25 @@ function register() {
   ipcMain.handle('dict:addViaDialog', guarded(async () => {
     const win = windows.getMainWindow();
     const r = await dialog.showOpenDialog(win, {
-      title: 'Add Dictionaries (.mdx)',
-      filters: [{ name: 'MDict dictionaries', extensions: ['mdx'] }],
+      title: 'Add dictionaries and glossaries',
+      filters: [
+        { name: 'Dictionaries and glossaries', extensions: ['mdx', 'json'] },
+        { name: 'MDict dictionaries', extensions: ['mdx'] },
+        { name: 'Gloss glossaries', extensions: ['json'] },
+      ],
       properties: ['openFile', 'multiSelections'],
     });
     if (r.canceled || r.filePaths.length === 0) return [];
     return dicts.loadMany(r.filePaths);
   }));
 
-  ipcMain.handle('dict:list', guarded(() => dicts.list()));
+  ipcMain.handle('dict:list', guarded((event) => dicts.list(currentDocByContents.get(event.sender.id))));
+  ipcMain.handle('dict:reload', guarded((_e, p) => dicts.reload(assertString(p, 4096))));
   ipcMain.handle('dict:remove', guarded((_e, p) => dicts.remove(assertString(p, 4096))));
   ipcMain.handle('dict:toggle', guarded((_e, p) => dicts.toggle(assertString(p, 4096))));
   ipcMain.handle('dict:reorder', guarded((_e, order) => dicts.reorder(order)));
-  ipcMain.handle('dict:lookup', guarded((_e, candidates) => dicts.lookup(candidates)));
+  ipcMain.handle('dict:lookup', guarded((event, candidates) =>
+    dicts.lookup(candidates, currentDocByContents.get(event.sender.id))));
 
   // ── Wikipedia ──────────────────────────────────────────────────────────────
   ipcMain.handle('wiki:lookup', guarded((_e, lang, title) => wiki.lookup(lang, title)));
@@ -165,7 +209,7 @@ function register() {
   }));
 
   // ── Shell / window ─────────────────────────────────────────────────────────
-  ipcMain.handle('shell:openExternal', guarded((_e, url) => {
+  ipcMain.handle('shell:openExternal', guarded(async (_e, url) => {
     assertString(url, MAX_URL_LENGTH);
     let parsed;
     try {
@@ -174,8 +218,13 @@ function register() {
       return { ok: false };
     }
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return { ok: false };
-    shell.openExternal(parsed.toString());
-    return { ok: true };
+    try {
+      await shell.openExternal(parsed.toString());
+      return { ok: true };
+    } catch (error) {
+      console.error('gloss: external link failed:', error?.message || error);
+      return { ok: false, message: 'The system could not open that link.' };
+    }
   }));
 
   ipcMain.handle('window:setReadMode', guarded((_e, on) => {
@@ -184,4 +233,4 @@ function register() {
   }));
 }
 
-module.exports = { register, openFromMain, setReadyHandler };
+module.exports = { register, openFromMain, setReadyHandler, currentDocumentPath };

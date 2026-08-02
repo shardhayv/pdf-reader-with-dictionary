@@ -35,7 +35,7 @@ contextBridge.exposeInMainWorld('gloss', {
   onCommand: (cb) => on('gloss:cmd', cb),
 
   // Per-document reading state
-  confirmOpen: (path) => ipcRenderer.invoke('doc:confirmOpen', path),
+  confirmOpen: (path, fingerprint) => ipcRenderer.invoke('doc:confirmOpen', path, fingerprint),
   updateDocState: (path, patch) => ipcRenderer.invoke('doc:updateState', path, patch),
   getRecents: () => ipcRenderer.invoke('recents:get'),
   clearRecents: () => ipcRenderer.invoke('recents:clear'),
@@ -43,10 +43,13 @@ contextBridge.exposeInMainWorld('gloss', {
   // Dictionaries
   addDictionaries: () => ipcRenderer.invoke('dict:addViaDialog'),
   listDictionaries: () => ipcRenderer.invoke('dict:list'),
+  reloadDictionary: (path) => ipcRenderer.invoke('dict:reload', path),
   removeDictionary: (path) => ipcRenderer.invoke('dict:remove', path),
   toggleDictionary: (path) => ipcRenderer.invoke('dict:toggle', path),
   reorderDictionaries: (order) => ipcRenderer.invoke('dict:reorder', order),
   lookupDictionaries: (candidates) => ipcRenderer.invoke('dict:lookup', candidates),
+  onDictionariesChanged: (cb) => on('gloss:dictionaries-changed', cb),
+  onStorageError: (cb) => on('gloss:storage-error', cb),
 
   // Wikipedia (network lives in main)
   lookupWikipedia: (lang, title) => ipcRenderer.invoke('wiki:lookup', lang, title),

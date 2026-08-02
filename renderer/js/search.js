@@ -23,6 +23,7 @@ const state = {
   matches: [],          // [{page, start, end}] in document order
   perPage: new Map(),   // page -> [{start, end}]
   current: -1,
+  failedPages: 0,
 };
 
 let els = null;
@@ -48,7 +49,7 @@ export function init() {
     close: document.getElementById('search-close'),
   };
 
-  scheduleRun = debounce(() => runSearch(els.input.value), QUERY_DEBOUNCE_MS);
+  scheduleRun = debounce(() => runSearch(els.input.value).catch(showSearchFailure), QUERY_DEBOUNCE_MS);
   els.input.addEventListener('input', scheduleRun);
   els.input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -80,7 +81,7 @@ export function openSearch() {
   // Reopening with a query still in the box re-runs it, so what is shown
   // always matches what is typed.
   if (els.input.value.trim().length >= MIN_QUERY_LENGTH && state.matches.length === 0) {
-    runSearch(els.input.value);
+    runSearch(els.input.value).catch(showSearchFailure);
   }
 }
 
@@ -106,8 +107,16 @@ function clearResults() {
   state.matches = [];
   state.perPage.clear();
   state.current = -1;
+  state.failedPages = 0;
   CSS.highlights.delete('gloss-search');
   CSS.highlights.delete('gloss-search-current');
+}
+
+function showSearchFailure(error) {
+  console.error('Gloss search failed:', error);
+  clearResults();
+  if (els) els.count.textContent = 'Search unavailable';
+  announce('Search could not finish. Your document is still open.');
 }
 
 // ── Search run ────────────────────────────────────────────────────────────────
@@ -137,11 +146,22 @@ async function runSearch(rawQuery) {
   // (or a stale result count) behind.
   const matches = [];
   const perPage = new Map();
+  let failedPages = 0;
   const superseded = () => runId !== state.runId || docGeneration !== viewer.documentGeneration();
 
   const total = viewer.pageCount();
   for (let page = 1; page <= total; page++) {
-    const index = await ensureIndex(page);
+    let index;
+    try {
+      index = await ensureIndex(page);
+    } catch (error) {
+      if (superseded()) return;
+      // One malformed page must not make search unusable for the rest of a
+      // long book. Keep going and make the partial scope explicit.
+      console.warn(`gloss: text extraction failed on page ${page}:`, error?.message || error);
+      failedPages++;
+      continue;
+    }
     if (superseded()) return;
     for (const m of findMatches(index, query)) {
       const entry = { page, start: m.start, end: m.end };
@@ -159,14 +179,19 @@ async function runSearch(rawQuery) {
   if (superseded()) return;
   state.matches = matches;
   state.perPage = perPage;
+  state.failedPages = failedPages;
 
   rebuildHighlights();
   if (state.matches.length > 0) {
     announce(`${state.matches.length} results for ${query}`);
     goToMatch(0);
   } else {
-    els.count.textContent = 'No results';
-    announce(`No results for ${query}`);
+    els.count.textContent = failedPages > 0
+      ? `No results · ${failedPages} ${failedPages === 1 ? 'page' : 'pages'} unreadable`
+      : 'No results';
+    announce(failedPages > 0
+      ? `No results for ${query}; ${failedPages} pages could not be searched`
+      : `No results for ${query}`);
   }
 }
 
@@ -219,8 +244,8 @@ function rebuildHighlights() {
 
 function updateCount() {
   els.count.textContent = state.matches.length > 0
-    ? `${state.current + 1} / ${state.matches.length}`
-    : 'No results';
+    ? `${state.current + 1} / ${state.matches.length}${state.failedPages > 0 ? ` · ${state.failedPages} pages unreadable` : ''}`
+    : state.failedPages > 0 ? `No results · ${state.failedPages} pages unreadable` : 'No results';
 }
 
 function goToRelative(delta) {

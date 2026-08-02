@@ -17,6 +17,8 @@ export const icons = {
   down: svg('<path d="m6 9 6 6 6-6"/>'),
   doc: svg('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>'),
   book: svg('<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>'),
+  bookmark: svg('<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>'),
+  refresh: svg('<path d="M20 11a8 8 0 1 0 2 5.3"/><path d="M20 4v7h-7"/>'),
   globe: svg('<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>'),
   spinner: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="spin"><path d="M21 12a9 9 0 1 1-6.2-8.56" stroke-linecap="round"/></svg>`,
   offline: svg('<path d="m2 2 20 20"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M5 12.5a9.7 9.7 0 0 1 5.4-2.8M16.2 10.6c1 .5 2 1.1 2.8 1.9"/><path d="M2 8.8A15.7 15.7 0 0 1 7 6M12.7 5.1A15.7 15.7 0 0 1 22 8.8"/><path d="M12 20h.01"/>'),

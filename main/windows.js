@@ -6,7 +6,7 @@
  * and the About window.
  */
 
-const { BrowserWindow, Menu, app, screen, nativeTheme } = require('electron');
+const { BrowserWindow, Menu, app, dialog, screen, nativeTheme } = require('electron');
 const path = require('path');
 const store = require('./store');
 
@@ -96,8 +96,15 @@ function createMainWindow() {
   if (store.getPrefs().window.isMaximized) mainWindow.maximize();
   attachStateHandlers(mainWindow);
 
-  mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  const win = mainWindow;
+  win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html')).catch((error) => {
+    console.error('gloss: renderer failed to load:', error);
+    dialog.showErrorBox('Gloss could not open its window',
+      'The application interface could not be loaded. Your PDFs, dictionaries, and reading state were not changed.');
+    if (!win.isDestroyed()) win.destroy();
+    app.quit();
+  });
+  win.once('ready-to-show', () => { if (!win.isDestroyed()) win.show(); });
 
   // Read mode is fullscreen (GNOME convention for F11) + hidden chrome.
   mainWindow.on('enter-full-screen', () => sendCommand('readMode', true));
@@ -109,12 +116,18 @@ function createMainWindow() {
 
 function setReadMode(on) {
   const win = getMainWindow();
-  if (win) win.setFullScreen(!!on);
+  if (win) {
+    try { win.setFullScreen(!!on); } catch (error) {
+      console.error('gloss: read mode change failed:', error?.message || error);
+    }
+  }
 }
 
 function sendCommand(name, arg) {
   const win = getMainWindow();
-  if (win) win.webContents.send('gloss:cmd', { name, arg });
+  if (win && !win.webContents.isDestroyed()) {
+    try { win.webContents.send('gloss:cmd', { name, arg }); } catch { /* window closed between checks */ }
+  }
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -145,8 +158,13 @@ function createAboutWindow() {
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#191817' : '#faf9f7',
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
-  aboutWindow.loadFile(path.join(__dirname, '..', 'about.html'), {
+  const win = aboutWindow;
+  win.loadFile(path.join(__dirname, '..', 'about.html'), {
     query: { version: app.getVersion(), electron: process.versions.electron },
+  }).catch((error) => {
+    console.error('gloss: About window failed to load:', error);
+    if (!win.isDestroyed()) win.destroy();
+    dialog.showErrorBox('About Gloss', 'The About window could not be loaded.');
   });
   aboutWindow.on('closed', () => { aboutWindow = null; });
 }

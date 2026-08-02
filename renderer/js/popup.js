@@ -235,8 +235,11 @@ function renderTabs() {
 }
 
 function renderBody() {
-  const { phase, sources, wikiState } = view.payload;
+  const { phase, sources, wikiState, localErrors = [] } = view.payload;
   const parts = [];
+  const localFailure = localErrors.length > 0
+    ? `${localErrors.slice(0, 2).join(', ')} ${localErrors.length === 1 ? 'is' : 'are'} unavailable. Reload ${localErrors.length === 1 ? 'it' : 'them'} in Preferences.`
+    : '';
 
   if (phase === 'loading') {
     parts.push(`<div class="popup-state">${icons.spinner}<span>Looking up…</span></div>`);
@@ -259,15 +262,31 @@ function renderBody() {
         <a class="def-link def-link--external" role="link" tabindex="0"
            data-external="${esc(source.url)}">Read more on Wikipedia ${icons.external}</a>`);
     } else {
-      parts.push(`<span class="source-badge">${icons.book}${esc(source.dictName)}</span>`);
+      const badgeIcon = source.dictKind === 'glossary' ? icons.bookmark : icons.book;
+      parts.push(`<span class="source-badge">${badgeIcon}${esc(source.dictName)}</span>`);
       if (source.keyText && source.keyText !== view.payload.word) {
         parts.push(`<div class="popup-matched">${esc(source.keyText)}</div>`);
       }
-      parts.push(`<div class="popup-definition" lang="">${sanitizeDefinition(source.html)}</div>`);
+      const lang = source.language ? ` lang="${esc(source.language)}"` : '';
+      parts.push(`<div class="popup-definition"${lang}>${sanitizeDefinition(source.html)}</div>`);
+      // Glossaries may carry the sentence the word was found in.
+      if (source.example) {
+        parts.push(`<blockquote class="popup-example"${lang}>${esc(source.example)}</blockquote>`);
+      }
+      if (source.dictKind === 'glossary' && (source.page || source.count)) {
+        const details = [];
+        if (source.page) details.push(`first seen on page ${source.page}`);
+        if (source.count) details.push(`${source.count} ${source.count === 1 ? 'occurrence' : 'occurrences'}`);
+        parts.push(`<div class="popup-entry-meta">${esc(details.join(' · '))}</div>`);
+      }
     }
     if (sources.length >= 1 && wikiState === 'loading') {
       parts.push(`<div class="popup-state popup-state--footer">${icons.spinner}<span>Checking Wikipedia…</span></div>`);
     }
+  }
+
+  if (localFailure) {
+    parts.push(`<div class="popup-state popup-state--footer popup-state--warning" role="status"><span>${esc(localFailure)}</span></div>`);
   }
 
   el.body.innerHTML = parts.join('');
@@ -277,6 +296,8 @@ function renderBody() {
 /** Announce results for screen readers (called once per completed lookup). */
 export function announceResult(payload) {
   const n = payload.sources.length;
-  if (n === 0) announce(`No definition found for ${payload.word}`);
+  if (n === 0 && payload.localErrors?.length) {
+    announce(`Local dictionary unavailable for ${payload.word}`);
+  } else if (n === 0) announce(`No definition found for ${payload.word}`);
   else announce(`Definition for ${payload.word}: ${n} ${n === 1 ? 'source' : 'sources'}`);
 }

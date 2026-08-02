@@ -1,7 +1,7 @@
 {
   "name": "gloss",
-  "version": "2.0.0",
-  "description": "A quiet PDF reader with instant Latin and Devanagari dictionary lookup",
+  "version": "2.1.0",
+  "description": "A quiet English and Devanagari PDF reader with MDX dictionaries and per-book JSON glossaries",
   "author": {
     "name": "Shardhay Vatshyayan",
     "email": "watsshardhay@gmail.com"
@@ -15,6 +15,7 @@
     "test:unit": "node --test \"test/unit/*.test.js\"",
     "test:e2e": "playwright test",
     "fixtures": "node scripts/make-fixtures.js",
+    "glossary": "node scripts/make-glossary.js",
     "icons": "electron scripts/make-icons.js",
     "dist": "electron-builder --linux",
     "dist:dir": "electron-builder --linux dir",
@@ -58,7 +59,7 @@
       "icon": "build/icons",
       "category": "Office;Viewer",
       "synopsis": "PDF reader with instant dictionary lookup",
-      "description": "Gloss is a quiet PDF reader for people who read to understand. Select any word — in Latin or Devanagari script — and its definition appears immediately, from your own local MDX dictionaries with optional Wikipedia fallback.",
+      "description": "Gloss is a quiet English and Devanagari PDF reader for people who read to understand. Select a word or phrase for an immediate definition from local MDX dictionaries or your own per-book JSON glossary.",
       "desktop": {
         "StartupWMClass": "Gloss",
         "Keywords": "pdf;reader;dictionary;devanagari;hindi;nepali;viewer;"

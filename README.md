@@ -20,7 +20,9 @@
 Gloss is a desktop PDF reader built around one idea: when you don't know a word,
 looking it up should take one gesture, not ten. Select any word and a definition
 appears next to it — from **your own MDX dictionaries**, with Wikipedia as an
-optional fallback.
+optional fallback. For each book, Gloss can also use a small **AI-assisted JSON
+glossary** containing the names, coined words, and context-specific meanings
+that no general dictionary knows.
 
 It works equally well with Latin and Devanagari text. Selecting `काठमाडौँ` gives
 you the whole word, chandrabindu and all; searching for `क्षेत्र` finds it even
@@ -38,7 +40,8 @@ telemetry, and no analytics.
 |---|---|
 | **Instant lookup** | Select a word or short phrase; the definition appears without covering the line you're reading |
 | **Latin and Devanagari** | Unicode-aware selection, search, and lookup that never split a conjunct or drop a matra |
-| **Your dictionaries** | Load any number of `.mdx` files, set their priority, toggle them per lookup |
+| **Your dictionaries** | Load any number of `.mdx` files without freezing the reader, set their priority, toggle them per lookup |
+| **Per-book glossaries** | Build an AI-assisted JSON glossary for one PDF; it activates automatically only for that book |
 | **Wikipedia fallback** | Optional, in English, Hindi, Nepali, or Maithili |
 | **Big documents** | Only a handful of pages are ever in memory, so a 300-page PDF opens instantly |
 | **Find in document** | Unicode-aware search with result counts and highlighting |
@@ -103,7 +106,7 @@ npm run dist:dir        # unpacked build into dist/linux-unpacked/
 Install and run the `.deb`:
 
 ```bash
-sudo apt install ./dist/gloss_2.0.0_amd64.deb
+sudo apt install ./dist/gloss_2.1.0_amd64.deb
 gloss                      # or launch from your applications menu
 gloss ~/Documents/paper.pdf
 ```
@@ -129,6 +132,21 @@ for Ubuntu and Debian.
    pick one or more `.mdx` files. Free MDX dictionaries (Oxford, Merriam-Webster,
    WordNet, and Hindi/Nepali dictionaries) are widely available; Gloss does not
    bundle any.
+
+   You can also add a **per-book glossary** — a small JSON file for the words a
+   general dictionary cannot help with. Build a draft from the book itself:
+
+   ```bash
+   npm run glossary -- ~/books/thebook.pdf --list   # preview the candidates
+   npm run glossary -- ~/books/thebook.pdf          # write the draft
+   ```
+
+   Give the draft to an AI to fill `definition` and useful `aliases`, review a
+   batch, then add the file the same way. Entries left blank are ignored, so a
+   partly finished glossary is perfectly usable. Regenerating safely merges new
+   vocabulary without erasing completed definitions and keeps a `.bak`; edits
+   can be picked up with the Reload button. See
+   [docs/GLOSSARIES.md](docs/GLOSSARIES.md).
 3. **Look up a word** — select it. Lookups only ever trigger from text inside the
    document, never from the interface. Use `Ctrl+D` to force a lookup of a longer
    selection, and pin the result if you want it to stay open while you read.
@@ -166,13 +184,15 @@ Gloss follows Electron's two-process model with the renderer fully sandboxed.
 │  Main process — main.js, main/                               │
 │  paths.js     which files may be read, and how               │
 │  store.js     preferences, per-document state, recents       │
-│  dicts.js     MDX registry and candidate lookup              │
+│  dicts.js     dictionary registry and candidate lookup       │
+│  glossary.js  JSON glossary backend (one per book)           │
+│  mdx-worker*  off-main-thread MDX parsing and lookup          │
 │  wiki.js      the only network access in the app             │
 │  security.js  navigation, window, and permission denial      │
 │  windows.js   window lifecycle, bounds, menu                 │
 │  ipc.js       the entire IPC surface                         │
 └───────────────────────────┬──────────────────────────────────┘
-                            │ contextBridge — 20 typed methods
+                            │ contextBridge — 24 typed methods
 ┌───────────────────────────▼──────────────────────────────────┐
 │  Preload — preload.js  (sandboxed, context-isolated)         │
 │  Resolves dropped files to paths; exposes window.gloss       │
@@ -196,8 +216,9 @@ Gloss follows Electron's two-process model with the renderer fully sandboxed.
 behaviour that matters most is testable in plain Node.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design decisions behind
-the virtualized renderer, the lookup candidate ladder, and the security model,
-and [docs/TESTING.md](docs/TESTING.md) for how to run and extend the tests.
+the virtualized renderer, the lookup candidate ladder, and the security model;
+[docs/GLOSSARIES.md](docs/GLOSSARIES.md) for building per-book glossaries; and
+[docs/TESTING.md](docs/TESTING.md) for how to run and extend the tests.
 
 ---
 
@@ -205,7 +226,7 @@ and [docs/TESTING.md](docs/TESTING.md) for how to run and extend the tests.
 
 ```bash
 npm run fixtures     # generate test PDFs (once; they are not committed)
-npm run test:unit    # Unicode, candidates, search, path validation
+npm run test:unit    # Unicode, builder safety, MDX workers, paths
 npm run test:e2e     # Electron integration + security regressions
 npm test             # both
 ```
@@ -240,7 +261,7 @@ pdf-reader-with-dictionary/
 ├── about.html/.css/.js      # about window
 ├── assets/icon.png
 ├── build/                   # packaging scripts (deb maintainer scripts)
-├── scripts/                 # fixture generators, screenshot runner
+├── scripts/                 # glossary builder, fixtures, visual/perf tools
 ├── test/unit/               # node:test suites
 ├── test/e2e/                # Playwright + Electron suites
 └── docs/                    # architecture and testing notes
@@ -274,6 +295,7 @@ No frontend framework and no bundler — plain ES modules in the renderer.
   recover the correct text from such a file short of OCR.
 - **pdf.js decides where text runs begin and end.** Occasionally it inserts a
   space inside a word or splits one across runs. Search handles the splits;
+  the glossary builder recovers conservative Devanagari/hyphenated splits, but
   a spurious inserted space can still affect an exact-phrase search.
 - **AppImage sandboxing on Ubuntu 24.04+** — see the packaging note above.
 - **Linux x86_64 only** in this release. Nothing in the code is Linux-specific,
@@ -285,9 +307,10 @@ No frontend framework and no bundler — plain ES modules in the renderer.
 
 MIT — see [LICENSE](LICENSE).
 
-Gloss bundles no dictionary data. `.mdx` files you load are yours, and their
-contents are treated as untrusted input: definitions are sanitized before
-display and can never navigate the app or reach the network.
+Gloss bundles no dictionary data. Dictionaries and glossaries you load are
+yours, and their contents are treated as untrusted input regardless of origin:
+definitions are sanitized before display and can never navigate the app or
+reach the network — including glossaries you wrote yourself.
 
 <div align="center">
 

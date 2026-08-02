@@ -53,8 +53,15 @@ export function init({ onVisibilityChange } = {}) {
     if (!link) return;
     const dest = outlineDests[Number(link.dataset.outlineIndex)];
     if (dest === undefined) return;
-    const page = await viewer.resolveDestination(dest);
-    if (page) viewer.goToPage(page);
+    try {
+      const page = await viewer.resolveDestination(dest);
+      if (page) viewer.goToPage(page);
+    } catch (error) {
+      // A malformed outline must never take the reader down with it. pdf.js
+      // normally returns null for bad destinations; this boundary also covers
+      // unexpected renderer errors and leaves page navigation usable.
+      console.error('Gloss could not follow that outline destination:', error);
+    }
   });
 
   viewer.on('documentopened', buildForDocument);
@@ -95,7 +102,10 @@ let outlineDests = [];
 function buildForDocument() {
   teardown();
   buildThumbnails();
-  buildOutline();
+  buildOutline().catch(error => {
+    console.error('Gloss could not build the document outline:', error);
+    if (els) els.outline.innerHTML = '<p class="sidebar-empty">The document outline could not be read.</p>';
+  });
   markCurrentPage(viewer.currentPage());
 }
 
@@ -132,7 +142,10 @@ function buildThumbnails() {
       if (!entry.isIntersecting) continue;
       const n = Number(entry.target.dataset.thumbPage);
       state.observer.unobserve(entry.target);
-      loadThumbnail(n, entry.target);
+      loadThumbnail(n, entry.target).catch(error => {
+        state.pending.delete(n);
+        console.error(`Gloss could not render thumbnail ${n}:`, error);
+      });
     }
   }, { root: els.thumbs, rootMargin: '300px 0px' });
 

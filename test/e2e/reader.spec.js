@@ -168,6 +168,7 @@ test('search works for Latin and Devanagari, and Escape closes only search', asy
 
 test('selecting Devanagari captures the whole word and copies the original text', async () => {
   const { app, page } = await launchGloss({ open: 'devanagari.pdf' });
+  const previousClipboardText = await app.evaluate(({ clipboard }) => clipboard.readText());
   try {
     await waitForDocument(page);
 
@@ -193,13 +194,15 @@ test('selecting Devanagari captures the whole word and copies the original text'
     await expect(page.locator('#popup')).toBeVisible();
     expect(await page.textContent('#popup-word')).toBe('काठमाडौँ');
 
-    // Copying reproduces the original text, not a normalized lookup candidate.
-    const copied = await page.evaluate(async () => {
-      const sel = window.getSelection().toString();
-      return sel.normalize('NFC') === sel ? sel : sel;
-    });
-    expect(copied).toBe('काठमाडौँ');
+    // Assert the real OS clipboard, not merely the selection string. Copying
+    // must reproduce the source code points, not a normalized lookup rung.
+    await app.evaluate(({ clipboard }) => clipboard.clear());
+    await page.keyboard.press('Control+c');
+    await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText()))
+      .toBe('काठमाडौँ');
   } finally {
+    await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), previousClipboardText)
+      .catch(() => {});
     await app.close();
   }
 });

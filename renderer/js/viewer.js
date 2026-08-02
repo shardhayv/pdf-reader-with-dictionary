@@ -9,7 +9,7 @@
 
 import * as pdfjsLib from '../../node_modules/pdfjs-dist/build/pdf.mjs';
 import { refs, debounce } from './dom.js';
-import { assessTextQuality } from './text.js';
+import { assessTextQuality, graphemes } from './text.js';
 
 const PDFJS_BASE = new URL('../../node_modules/pdfjs-dist/', import.meta.url);
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('build/pdf.worker.mjs', PDFJS_BASE).href;
@@ -27,6 +27,7 @@ const QUALITY_SAMPLE_PAGES = 4;
 const state = {
   doc: null,
   loadingTask: null,
+  pendingLoadingTask: null,
   generation: 0,     // bumped whenever the mounted document changes
   openSequence: 0,   // bumped per open attempt, including ones that fail
   total: 0,
@@ -58,6 +59,8 @@ function emit(event, payload) {
 export const hasDocument = () => !!state.doc;
 /** Identity of the mounted document; used to discard work from an older one. */
 export const documentGeneration = () => state.generation;
+/** Stable PDF identifier used to activate a glossary even if a book is moved. */
+export const documentFingerprint = () => state.doc?.fingerprints?.[0] || '';
 export const pageCount = () => state.total;
 export const currentPage = () => state.current;
 export const zoomMode = () => state.zoomMode;
@@ -93,6 +96,25 @@ function makePlaceholder(n) {
   el.className = 'page-placeholder';
   el.textContent = String(n);
   return el;
+}
+
+function showPageRenderFailure(wrapper, n) {
+  const failure = document.createElement('div');
+  failure.className = 'page-render-error';
+  failure.setAttribute('role', 'status');
+  const message = document.createElement('span');
+  message.textContent = `Page ${n} could not be rendered.`;
+  const retry = document.createElement('button');
+  retry.type = 'button';
+  retry.className = 'btn page-render-retry';
+  retry.textContent = 'Retry page';
+  retry.addEventListener('click', () => {
+    wrapper.replaceChildren(makePlaceholder(n));
+    wrapper.dataset.rendered = 'false';
+    renderPage(n);
+  });
+  failure.append(message, retry);
+  wrapper.replaceChildren(failure);
 }
 
 function buildPlaceholders() {
@@ -198,24 +220,37 @@ export function renderPage(n) {
       state.renderTasks.delete(n);
       if (gen !== state.generation || wrapper.dataset.rendered !== 'true') return;
 
-      const textContent = await page.getTextContent();
-      if (gen !== state.generation) return;
-      cacheText(n, textContent);
+      // Make the painted page visible immediately. Text extraction can be
+      // slower (or fail independently) and must never hold the page hostage.
+      wrapper.dataset.renderedScale = String(state.zoomScale);
+      wrapper.replaceChildren(canvas);
 
-      const textLayerDiv = document.createElement('div');
-      textLayerDiv.className = 'pdf-text-layer';
-      textLayerDiv.style.setProperty('--scale-factor', String(viewport.scale));
-      const textLayer = new pdfjsLib.TextLayer({
-        textContentSource: textContent,
-        container: textLayerDiv,
-        viewport,
-      });
-      await textLayer.render();
+      // Painting the page and extracting selectable text are independent.
+      // If a malformed ToUnicode map breaks the text layer, keep the visible
+      // page instead of replacing successful rendering with a blank error.
+      let textLayerDiv = null;
+      try {
+        const textContent = await page.getTextContent();
+        if (gen !== state.generation) return;
+        cacheText(n, textContent);
+        textLayerDiv = document.createElement('div');
+        textLayerDiv.className = 'pdf-text-layer';
+        textLayerDiv.style.setProperty('--scale-factor', String(viewport.scale));
+        const textLayer = new pdfjsLib.TextLayer({
+          textContentSource: textContent,
+          container: textLayerDiv,
+          viewport,
+        });
+        await textLayer.render();
+        wrapper._textDivs = textLayer.textDivs;
+      } catch (textError) {
+        console.warn(`gloss: selectable text unavailable on page ${n}:`, textError?.message || textError);
+        textLayerDiv = null;
+        wrapper._textDivs = null;
+      }
       if (gen !== state.generation || wrapper.dataset.rendered !== 'true') return;
 
-      wrapper.dataset.renderedScale = String(state.zoomScale);
-      wrapper.replaceChildren(canvas, textLayerDiv);
-      wrapper._textDivs = textLayer.textDivs;
+      wrapper.replaceChildren(...(textLayerDiv ? [canvas, textLayerDiv] : [canvas]));
       emit('pagerendered', n);
     } catch (err) {
       state.renderTasks.delete(n);
@@ -223,6 +258,7 @@ export function renderPage(n) {
         wrapper.dataset.rendered = 'false';
         if (!err || err.name !== 'RenderingCancelledException') {
           console.warn(`gloss: page ${n} render failed:`, err?.message);
+          showPageRenderFailure(wrapper, n);
         }
       }
     }
@@ -240,6 +276,7 @@ function destroyPage(wrapper) {
   delete wrapper.dataset.renderedScale;
   delete wrapper._textDivs;
   delete wrapper._renderPromise;
+  delete wrapper.dataset.renderFailures;
   emit('pagedestroyed', n);
 }
 
@@ -275,19 +312,51 @@ function cacheText(n, textContent) {
   if (state.textCache.has(n)) return;
   let text = '';
   const items = [];
+  let previous = null;
   for (const item of textContent.items) {
+    const separator = searchItemBoundary(previous, item);
+    if (separator && text && !/\s$/.test(text)) text += separator;
     const start = text.length;
     text += item.str;
     items.push({ start, end: text.length });
+    previous = item;
   }
-  // Item strings are concatenated with nothing between them. pdf.js splits
-  // items on its own layout heuristics, and those splits regularly land
-  // mid-word (a Devanagari conjunct, a hyphenated line break). Inserting a
-  // separator at item or line boundaries would make such words unfindable,
-  // which matters far more than the rare run-together across a real line
-  // break. Offsets stay contiguous, so search ranges map back to items
-  // exactly.
   state.textCache.set(n, { text, items });
+}
+
+function textEdgeWord(value, side) {
+  const pattern = side === 'end'
+    ? /([\p{L}\p{M}\p{Cf}]+)$/u
+    : /^([\p{L}\p{M}\p{Cf}]+)/u;
+  return String(value || '').match(pattern)?.[1] || '';
+}
+
+function isRecoveredDevanagariBoundary(previous, item) {
+  const left = textEdgeWord(previous.str, 'end');
+  const right = textEdgeWord(item.str, 'start');
+  if (!left || !right || !/\p{Script=Devanagari}/u.test(left) || !/\p{Script=Devanagari}/u.test(right)) {
+    return false;
+  }
+  const beforeLeft = previous.str.slice(0, previous.str.length - left.length);
+  // A short fragment attached after punctuation is the pdf.js split exposed
+  // by the fixture: "… ।प्र" + "ज्ञा …". Join this conservative case while
+  // keeping ordinary line/column boundaries searchable as separate words.
+  return /[\p{P}\p{S}]\s*$/u.test(beforeLeft) && graphemes(left).length <= 2;
+}
+
+function searchItemBoundary(previous, item) {
+  if (!previous || !item || typeof item.str !== 'string') return '';
+  if (/\s$/.test(previous.str) || /^\s/.test(item.str)) return '';
+  const previousTransform = Array.isArray(previous.transform) ? previous.transform : [];
+  const transform = Array.isArray(item.transform) ? item.transform : [];
+  const sameLine = previousTransform.length >= 6 && transform.length >= 6 &&
+    Math.abs(transform[5] - previousTransform[5]) < 2;
+  const previousWidth = Number.isFinite(previous.width) ? previous.width : 0;
+  const gap = sameLine ? transform[4] - (previousTransform[4] + previousWidth) : Infinity;
+  const scale = Math.max(1, Math.min(previous.height || 10, item.height || 10));
+  const hardBoundary = previous.hasEOL || !sameLine || gap > Math.max(0.8, scale * 0.08);
+  if (!hardBoundary || isRecoveredDevanagariBoundary(previous, item)) return '';
+  return ' ';
 }
 
 /** Synchronous access to already-extracted page text (or null). */
@@ -449,6 +518,11 @@ export function closeDocument() {
   state.pageDims.clear();
   refs.pages().replaceChildren();
 
+  if (state.pendingLoadingTask) {
+    state.pendingLoadingTask.destroy().catch(() => {});
+    state.pendingLoadingTask = null;
+  }
+
   if (state.loadingTask) {
     state.loadingTask.destroy().catch(() => {});
     state.loadingTask = null;
@@ -474,6 +548,14 @@ export async function openDocument(data, opts) {
   // are already reading.
   const openId = ++state.openSequence;
 
+  // A CLI/file-manager open can arrive while an encrypted candidate is still
+  // waiting for a password. Supersede and destroy that task rather than
+  // leaving a hidden parser and unresolved prompt behind.
+  if (state.pendingLoadingTask) {
+    state.pendingLoadingTask.destroy().catch(() => {});
+    state.pendingLoadingTask = null;
+  }
+
   let passwordCanceled = false;
   const loadingTask = pdfjsLib.getDocument({
     data,
@@ -482,6 +564,7 @@ export async function openDocument(data, opts) {
     standardFontDataUrl: new URL('standard_fonts/', PDFJS_BASE).href,
     isEvalSupported: false, // lets the CSP drop 'unsafe-eval'
   });
+  state.pendingLoadingTask = loadingTask;
 
   loadingTask.onPassword = (updatePassword, reason) => {
     const retry = reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD;
@@ -492,10 +575,15 @@ export async function openDocument(data, opts) {
       } else {
         updatePassword(password);
       }
+    }).catch((error) => {
+      console.error('gloss: password prompt failed:', error);
+      passwordCanceled = true;
+      loadingTask.destroy().catch(() => {});
     });
   };
 
   const abandon = (code, message) => {
+    if (state.pendingLoadingTask === loadingTask) state.pendingLoadingTask = null;
     loadingTask.destroy().catch(() => {});
     return { ok: false, code, message };
   };
@@ -531,6 +619,7 @@ export async function openDocument(data, opts) {
   // Validated — now it is safe to replace the current document. Everything
   // from here is synchronous; later async work (page rendering, text
   // assessment) captures state.generation itself.
+  if (state.pendingLoadingTask === loadingTask) state.pendingLoadingTask = null;
   closeDocument();
   state.loadingTask = loadingTask;
   state.doc = doc;

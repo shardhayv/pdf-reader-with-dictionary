@@ -12,11 +12,13 @@ npm test             # both
 ## Fixtures
 
 Test PDFs are generated, not committed (`test/fixtures/` is gitignored).
-`npm run fixtures` produces five:
+`npm run fixtures` produces six (the encrypted fixture is optional if
+Ghostscript is unavailable):
 
 | Fixture | Built by | Exercises |
 |---|---|---|
 | `latin.pdf` | direct PDF writer | basic opening, Latin search |
+| `encrypted.pdf` | Ghostscript from `latin.pdf` | real wrong/correct/cancel password flow (password `gloss`) |
 | `large.pdf` | direct PDF writer, 300 pages | virtualization bounds, navigation, search timing |
 | `devanagari.pdf` | HarfBuzz + hand-written ToUnicode | Devanagari selection, copy, search, conjuncts |
 | `garbled.pdf` | Chromium `printToPDF` | the broken-`ToUnicode` detection path |
@@ -56,8 +58,8 @@ is a genuine real-world example of a PDF that renders perfectly while carrying
 broken text data — the case the app has to detect and explain.
 
 Requirements: `python3-gi` with the HarfBuzz typelib, `fontTools`, and a Noto
-Devanagari font. If any is missing the generator skips that fixture with a
-message rather than failing the build.
+Devanagari font. Ghostscript (`gs`) builds the encrypted fixture. If an optional
+tool is missing, the generator skips only that fixture with a message.
 
 ---
 
@@ -97,6 +99,25 @@ resolved against the caller's cwd, nonexistent and non-file paths dropped);
 `readPdfSafely` realpath canonicalization, magic-byte sniffing, size and
 emptiness handling, and distinct error codes.
 
+**`test/unit/glossary.test.js`** — versioned and legacy JSON parsing; exact,
+alias, NFC and Devanagari lookup; book path/fingerprint scoping; global scope;
+draft counts; contextual occurrences; value limits; and malformed-file errors.
+
+**`test/unit/glossary-builder.test.js`** — English/Devanagari candidate quality,
+short conjunct headwords, recurring terms, hyphenated compounds, common-word
+filtering, grapheme-safe context, recovery of synthetic nukta/virama word
+splits, scan/garbled-PDF refusal, safe AI-definition merge, `.bak` recovery,
+and refusal to overwrite the source PDF.
+
+**`test/unit/mdx-worker.test.js`** — proves a deliberately synchronous parser
+does not block the caller's event loop, exact/proper-case lookup remains ordered,
+parser/worker failures reject without taking down the app process, and a timed-out
+lookup retires its stuck worker instead of poisoning later lookups.
+
+**`test/unit/store.test.js`** — corrupt preference/history files are preserved
+as timestamped backups, safe defaults load, and the primary files can be
+repaired without touching those recovery copies.
+
 **`test/e2e/security.spec.js`** — 25 hostile dictionary payloads through the
 real sanitizer; link rewriting to inert `data-*` attributes; the exact
 `window.gloss` surface (widening it fails the test); window security
@@ -108,8 +129,19 @@ path.
 focusing; page navigation, zoom modes and shortcuts; bounded page mounting
 across a 300-page document; Latin and Devanagari search including a conjunct
 split across text items; Devanagari selection and copy fidelity asserted at the
-code-point level; exactly one lookup per selection; stale-response suppression;
+code-point level against Electron's real clipboard (restored afterwards);
+exactly one lookup per selection; stale-response suppression;
 scanned and broken-mapping notices; and per-document state restoration.
+
+**`test/e2e/glossary.spec.js`** — loading through the real dialog, aliases and
+Devanagari popup rendering, automatic PDF-specific activation, global priority,
+transactional live reload, draft behavior, and sanitizer parity with MDX.
+
+**`test/e2e/integration.spec.js`** — dialog/drop/recents paths, keyboard and
+reduced-motion states, password UI, plus recovery from a failed file portal, a
+corrupt saved glossary, an unexpected renderer promise rejection, a failed MDX
+lookup, and a real forced Chromium renderer crash that reopens the PDF at its
+saved page and remains interactive.
 
 ---
 
@@ -133,7 +165,7 @@ Worth checking by eye after any CSS change:
 
 ## Adding tests
 
-Put pure logic in `renderer/js/text.js` and test it in `test/unit/` — it has no
-DOM or Electron dependency, so those tests run in milliseconds. Reserve the
+Put pure logic in `renderer/js/text.js`, `main/glossary.js`, or
+`scripts/glossary-builder.mjs` and test it in `test/unit/`. Reserve the
 Playwright suites for behaviour that genuinely needs the app: IPC, rendering,
-selection, and the security boundaries.
+selection, recovery surfaces, and security boundaries.

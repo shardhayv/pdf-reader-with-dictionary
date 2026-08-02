@@ -67,26 +67,37 @@ export async function lookupSelection(rawText, anchorRect) {
   popup.render({ word: displayWord, phase: 'loading', sources: [], wikiState: 'skipped' }, anchorRect);
 
   let local = [];
+  let localErrors = [];
   try {
     local = await window.gloss.lookupDictionaries(candidates);
+    localErrors = local.filter(result => result?.error).map(result => result.dictName || 'A local dictionary');
   } catch {
     local = [];
+    localErrors = ['Local dictionaries'];
   }
   if (token !== requestToken) return; // superseded
 
-  const sources = local.map(r => ({
-    kind: 'mdx', dictName: r.dictName, keyText: r.keyText, html: r.definition,
+  const sources = local.filter(r => !r.error).map(r => ({
+    kind: 'local',
+    dictKind: r.dictKind,
+    dictName: r.dictName,
+    keyText: r.keyText,
+    html: r.definition,
+    example: r.example || '',
+    page: r.page || null,
+    count: r.count || null,
+    language: r.language || '',
   }));
 
   const wantWiki = prefs.wikipediaEnabled && (!prefs.wikipediaAsFallback || sources.length === 0);
   let wikiState = wantWiki ? 'loading' : 'skipped';
 
-  const payload = { word: displayWord, phase: 'done', sources, wikiState };
+  const payload = { word: displayWord, phase: 'done', sources, wikiState, localErrors };
   popup.render(payload, anchorRect);
 
   if (!wantWiki) {
     popup.announceResult(payload);
-    remember(key, { sources, wikiState: 'skipped' });
+    if (localErrors.length === 0) remember(key, { sources, wikiState: 'skipped', localErrors: [] });
     return;
   }
 
@@ -103,13 +114,13 @@ export async function lookupSelection(rawText, anchorRect) {
     ? [...sources, { kind: 'wiki', title: wiki.title, extract: wiki.extract, url: wiki.url, lang: wiki.lang }]
     : sources;
 
-  const finalPayload = { word: displayWord, phase: 'done', sources: finalSources, wikiState };
+  const finalPayload = { word: displayWord, phase: 'done', sources: finalSources, wikiState, localErrors };
   popup.render(finalPayload);
   popup.announceResult(finalPayload);
 
   // Offline/error results are not cached — retry may succeed later.
-  if (wikiState === 'hit' || wikiState === 'miss' || wikiState === 'skipped') {
-    remember(key, { sources: finalSources, wikiState });
+  if (localErrors.length === 0 && (wikiState === 'hit' || wikiState === 'miss' || wikiState === 'skipped')) {
+    remember(key, { sources: finalSources, wikiState, localErrors: [] });
   }
 }
 

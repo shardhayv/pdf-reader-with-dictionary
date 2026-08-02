@@ -81,11 +81,20 @@ function renderNav() {
 }
 
 async function renderSection() {
-  switch (activeSection) {
-    case 'dictionaries': return renderDictionaries();
-    case 'lookup': return renderLookup();
-    case 'appearance': return renderAppearance();
-    case 'session': return renderSession();
+  try {
+    switch (activeSection) {
+      case 'dictionaries': return await renderDictionaries();
+      case 'lookup': return renderLookup();
+      case 'appearance': return renderAppearance();
+      case 'session': return await renderSession();
+    }
+  } catch (error) {
+    console.error(`Gloss could not render the ${activeSection} preferences:`, error);
+    els.body.innerHTML = `
+      <h3 class="prefs-title">Preferences unavailable</h3>
+      <p class="prefs-error" role="alert">Gloss could not load this section. The app and your current document are still usable.</p>
+      <button class="btn" id="prefs-retry">Try again</button>`;
+    $('prefs-retry')?.addEventListener('click', renderSection);
   }
 }
 
@@ -94,70 +103,131 @@ async function renderSection() {
 /** Load failures survive the re-render that follows them. */
 let dictionaryError = '';
 
+function dictionaryFailure(action, error) {
+  console.error(`Gloss could not ${action}:`, error);
+  dictionaryError = `Could not ${action}. Existing dictionaries and glossaries were kept.`;
+}
+
 async function renderDictionaries() {
   const dicts = await window.gloss.listDictionaries();
   const rows = dicts.length === 0
-    ? '<p class="prefs-empty">No dictionaries yet. Add MDX dictionaries to enable offline lookup.</p>'
-    : dicts.map((d, i) => `
+    ? '<p class="prefs-empty">No local sources yet. Add an MDX dictionary or a per-book JSON glossary.</p>'
+    : dicts.map((d, i) => {
+      const ready = d.entryCount == null ? '' : `${d.entryCount} ready`;
+      const draft = d.draftCount ? `${d.draftCount} draft` : '';
+      const count = [ready, draft].filter(Boolean).join(' · ');
+      const scope = d.kind === 'mdx' || d.scope === 'global'
+        ? 'all books'
+        : d.applicable ? 'this book' : `for ${d.sourceFile || 'another book'}`;
+      const type = d.kind === 'glossary' ? 'JSON glossary' : 'MDX dictionary';
+      const health = d.error ? 'needs reload' : '';
+      return `
       <div class="dict-row" data-path="${esc(d.path)}">
         <label class="switch" title="${d.enabled ? 'Enabled' : 'Disabled'}">
           <input type="checkbox" data-act="toggle" ${d.enabled ? 'checked' : ''}
                  aria-label="Enable ${esc(d.name)}">
           <span class="switch-slider"></span>
         </label>
-        <span class="dict-name" title="${esc(d.path)}">${esc(d.name)}</span>
+        <span class="dict-info" title="${esc(d.path)}">
+          <span class="dict-name">${esc(d.name)}</span>
+          <span class="dict-meta${d.error ? ' dict-meta--error' : ''}">${esc([type, scope, count, health].filter(Boolean).join(' · '))}</span>
+        </span>
         <span class="dict-actions">
+          <button class="icon-btn" data-act="reload" aria-label="Reload ${esc(d.name)}" title="Reload from disk">${icons.refresh}</button>
           <button class="icon-btn" data-act="up" ${i === 0 ? 'disabled' : ''} aria-label="Move ${esc(d.name)} up">${icons.up}</button>
           <button class="icon-btn" data-act="down" ${i === dicts.length - 1 ? 'disabled' : ''} aria-label="Move ${esc(d.name)} down">${icons.down}</button>
           <button class="icon-btn icon-btn--danger" data-act="remove" aria-label="Remove ${esc(d.name)}">${icons.trash}</button>
         </span>
-      </div>`).join('');
+      </div>`;
+    }).join('');
 
   els.body.innerHTML = `
     <h3 class="prefs-title">Dictionaries</h3>
-    <p class="prefs-hint">Lookups try each enabled dictionary from top to bottom. Definitions from
-    dictionary files are sandboxed and sanitized.</p>
+    <p class="prefs-hint">MDX dictionaries work everywhere. A generated JSON glossary activates only
+    for its own book. Reload it here after adding definitions while Gloss is open.</p>
     <div class="dict-list">${rows}</div>
     <button class="btn" id="prefs-add-dict">Add dictionaries…</button>
-    ${dictionaryError ? `<p class="prefs-error" role="alert">${dictionaryError}</p>` : ''}`;
+    ${dictionaryError ? `<p class="prefs-error" role="alert">${esc(dictionaryError)}</p>` : ''}`;
 
   $('prefs-add-dict').addEventListener('click', async () => {
-    const results = await window.gloss.addDictionaries();
-    const failed = results.filter(r => !r.success);
-    // Recorded before the re-render below, so the message is still on screen
-    // afterwards instead of being wiped by it.
-    dictionaryError = failed.length > 0
-      ? `Could not load ${failed.map(f => `${esc(f.name)} (${esc(f.error || 'error')})`).join(', ')}`
-      : '';
-    hooks.onDictsChanged();
-    renderDictionaries();
+    const button = $('prefs-add-dict');
+    button.disabled = true;
+    button.textContent = 'Loading…';
+    try {
+      const results = await window.gloss.addDictionaries();
+      const failed = Array.isArray(results) ? results.filter(r => !r.success) : [];
+      // Recorded before the re-render below, so the message is still on screen
+      // afterwards instead of being wiped by it.
+      dictionaryError = failed.length > 0
+        ? `Could not load ${failed.map(f => `${f.name} (${f.error || 'error'})`).join(', ')}`
+        : '';
+      await hooks.onDictsChanged();
+    } catch (error) {
+      dictionaryFailure('add lookup sources', error);
+    }
+    await renderSection();
   });
 
   els.body.querySelector('.dict-list')?.addEventListener('click', async (e) => {
     const btn = e.target.closest('button[data-act]');
     if (!btn) return;
-    const path = btn.closest('.dict-row').dataset.path;
-    const dictsNow = await window.gloss.listDictionaries();
-    const order = dictsNow.map(d => d.path);
-    const idx = order.indexOf(path);
-    if (btn.dataset.act === 'remove') {
-      await window.gloss.removeDictionary(path);
-    } else if (btn.dataset.act === 'up' && idx > 0) {
-      [order[idx - 1], order[idx]] = [order[idx], order[idx - 1]];
-      await window.gloss.reorderDictionaries(order);
-    } else if (btn.dataset.act === 'down' && idx >= 0 && idx < order.length - 1) {
-      [order[idx], order[idx + 1]] = [order[idx + 1], order[idx]];
-      await window.gloss.reorderDictionaries(order);
+    btn.disabled = true;
+    const dictPath = btn.closest('.dict-row').dataset.path;
+    try {
+      const dictsNow = await window.gloss.listDictionaries();
+      const order = dictsNow.map(d => d.path);
+      const idx = order.indexOf(dictPath);
+      let result = { success: true };
+      if (btn.dataset.act === 'remove') {
+        result = await window.gloss.removeDictionary(dictPath);
+      } else if (btn.dataset.act === 'reload') {
+        result = await window.gloss.reloadDictionary(dictPath);
+        dictionaryError = result.success ? ''
+          : `Could not reload ${result.name || 'lookup source'} (${result.error || 'error'}). The previous working copy is still active.`;
+      } else if (btn.dataset.act === 'up' && idx > 0) {
+        [order[idx - 1], order[idx]] = [order[idx], order[idx - 1]];
+        result = await window.gloss.reorderDictionaries(order);
+      } else if (btn.dataset.act === 'down' && idx >= 0 && idx < order.length - 1) {
+        [order[idx], order[idx + 1]] = [order[idx + 1], order[idx]];
+        result = await window.gloss.reorderDictionaries(order);
+      }
+      if (!result?.success) {
+        if (btn.dataset.act !== 'reload') throw new Error(result?.error || 'Action was refused');
+      }
+      await hooks.onDictsChanged();
+    } catch (error) {
+      dictionaryFailure(`${btn.dataset.act} that lookup source`, error);
     }
-    hooks.onDictsChanged();
-    renderDictionaries();
+    await renderSection();
   });
 
   els.body.querySelector('.dict-list')?.addEventListener('change', async (e) => {
     if (e.target.dataset.act !== 'toggle') return;
-    await window.gloss.toggleDictionary(e.target.closest('.dict-row').dataset.path);
-    hooks.onDictsChanged();
+    e.target.disabled = true;
+    try {
+      const result = await window.gloss.toggleDictionary(e.target.closest('.dict-row').dataset.path);
+      if (!result?.success) throw new Error('Lookup source is no longer loaded');
+      dictionaryError = '';
+      await hooks.onDictsChanged();
+    } catch (error) {
+      dictionaryFailure('toggle that lookup source', error);
+    }
+    await renderSection();
   });
+}
+
+async function savePreference(delta, rerender) {
+  try {
+    await hooks.applyPrefs(delta);
+    if (rerender) rerender();
+  } catch (error) {
+    console.error('Gloss could not save a preference:', error);
+    // Re-render from the last confirmed preferences so the control does not
+    // claim a setting was saved when it was not.
+    if (rerender) rerender();
+    els.body.insertAdjacentHTML('beforeend',
+      '<p class="prefs-error" role="alert">That preference could not be saved. The previous setting is still active.</p>');
+  }
 }
 
 // ── Lookup ────────────────────────────────────────────────────────────────────
@@ -192,14 +262,14 @@ function renderLookup() {
     request Gloss ever makes, and only at lookup time.</p>`;
 
   $('wiki-enabled').addEventListener('change', async (e) => {
-    await hooks.applyPrefs({ wikipediaEnabled: e.target.checked });
-    renderLookup();
+    await savePreference({ wikipediaEnabled: e.target.checked }, renderLookup);
   });
   for (const radio of els.body.querySelectorAll('[name="wiki-mode"]')) {
-    radio.addEventListener('change', (e) =>
-      hooks.applyPrefs({ wikipediaAsFallback: e.target.value === 'fallback' }));
+    radio.addEventListener('change', (e) => savePreference(
+      { wikipediaAsFallback: e.target.value === 'fallback' }, renderLookup));
   }
-  $('wiki-lang').addEventListener('change', (e) => hooks.applyPrefs({ wikipediaLang: e.target.value }));
+  $('wiki-lang').addEventListener('change', (e) =>
+    savePreference({ wikipediaLang: e.target.value }, renderLookup));
 }
 
 // ── Appearance ────────────────────────────────────────────────────────────────
@@ -216,7 +286,8 @@ function renderAppearance() {
       ${radio('dark', 'Dark')}
     </div>`;
   for (const input of els.body.querySelectorAll('[name="theme"]')) {
-    input.addEventListener('change', (e) => hooks.applyPrefs({ theme: e.target.value }));
+    input.addEventListener('change', (e) =>
+      savePreference({ theme: e.target.value }, renderAppearance));
   }
 }
 
@@ -233,10 +304,19 @@ async function renderSession() {
       <button class="btn" id="prefs-clear-cache">Clear lookup cache</button>
       <button class="btn" id="prefs-clear-recents">Clear recent documents</button>
     </div>`;
-  $('prefs-clear-cache').addEventListener('click', () => { hooks.clearLookupCache(); renderSession(); });
+  $('prefs-clear-cache').addEventListener('click', () => {
+    hooks.clearLookupCache();
+    renderSection();
+  });
   $('prefs-clear-recents').addEventListener('click', async () => {
-    await window.gloss.clearRecents();
-    hooks.onRecentsCleared?.();
-    renderSession();
+    try {
+      await window.gloss.clearRecents();
+      await hooks.onRecentsCleared?.();
+      await renderSection();
+    } catch (error) {
+      console.error('Gloss could not clear recent documents:', error);
+      els.body.insertAdjacentHTML('beforeend',
+        '<p class="prefs-error" role="alert">Recent documents could not be cleared.</p>');
+    }
   });
 }

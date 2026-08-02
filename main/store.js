@@ -49,6 +49,8 @@ let docs = {}; // realpath -> { name, page, zoomMode, zoomScale, scrollFraction,
 
 let prefsTimer = null;
 let docsTimer = null;
+let loadWarnings = [];
+let errorHandler = null;
 
 function prefsPath() { return path.join(app.getPath('userData'), 'preferences.json'); }
 function docsPath() { return path.join(app.getPath('userData'), 'documents.json'); }
@@ -106,27 +108,47 @@ function sanitizeDocState(raw) {
 
 // ── Load / save ───────────────────────────────────────────────────────────────
 
-function readJson(file) {
+function readJson(file, label) {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return null; // first run or unreadable — defaults apply
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null; // normal first run
+    let backup = '';
+    try {
+      backup = `${file}.corrupt-${Date.now()}`;
+      fs.copyFileSync(file, backup);
+    } catch {
+      backup = '';
+    }
+    const message = `${label} could not be read; Gloss is using safe defaults.`;
+    loadWarnings.push({ message, backup });
+    console.error(`gloss: ${message}`, error?.message || error, backup ? `(backup: ${backup})` : '');
+    return null;
   }
 }
 
 function writeJsonAtomic(file, value) {
+  const tmp = `${file}.tmp`;
   try {
-    const tmp = `${file}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(value, null, 2), 'utf8');
     fs.renameSync(tmp, file);
   } catch (err) {
     console.error('gloss: state save failed:', err.message);
+    try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch { /* preserve original; cleanup is best effort */ }
+    try {
+      errorHandler?.({
+        message: 'Gloss could not save preferences or reading position. Check available disk space and folder permissions.',
+      });
+    } catch (handlerError) {
+      console.error('gloss: state-error notification failed:', handlerError?.message || handlerError);
+    }
   }
 }
 
 function load() {
-  prefs = sanitizePrefs(readJson(prefsPath()));
-  const rawDocs = readJson(docsPath());
+  loadWarnings = [];
+  prefs = sanitizePrefs(readJson(prefsPath(), 'Preferences'));
+  const rawDocs = readJson(docsPath(), 'Reading history');
   docs = {};
   if (rawDocs && typeof rawDocs.docs === 'object' && rawDocs.docs !== null) {
     for (const [p, state] of Object.entries(rawDocs.docs)) {
@@ -134,6 +156,16 @@ function load() {
     }
   }
   pruneDocs();
+}
+
+function consumeLoadWarnings() {
+  const warnings = loadWarnings.map(item => ({ ...item }));
+  loadWarnings = [];
+  return warnings;
+}
+
+function setErrorHandler(handler) {
+  errorHandler = typeof handler === 'function' ? handler : null;
 }
 
 function schedulePrefsSave() {
@@ -216,6 +248,7 @@ function clearRecents() {
 module.exports = {
   ZOOM_MIN, ZOOM_MAX,
   load, flushSync,
+  consumeLoadWarnings, setErrorHandler,
   getPrefs, setPrefsFromRenderer, setPrefsInternal,
   getDocState, updateDocState,
   recents, clearRecents,

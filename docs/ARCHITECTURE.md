@@ -14,6 +14,19 @@ constraints that keep them in place.
 | Owns | filesystem, dictionaries, network, window state | rendering, text, UI |
 | Talks via | `ipcMain.handle` | `window.gloss` (contextBridge) |
 
+MDX parsing is the exception to the two-column picture: `main/mdx-worker.js`
+runs in a Node worker thread. `js-mdict` builds its index synchronously, so
+doing that in the main process would freeze the window for a large dictionary.
+The main process sends the complete candidate ladder in one worker message and
+receives the first hit; JSON glossaries remain in-process because they are
+small and cheap to parse.
+
+Worker startup and lookup have hard timeouts. If an MDX worker crashes or stops
+responding, its outstanding requests reject, the worker is retired, healthy
+dictionaries still return results, and the popup identifies the unavailable
+source with a Reload action instead of presenting the failure as “no word
+found.”
+
 The renderer has no filesystem or network capability of any kind. Everything it
 can do is enumerated in `preload.js`, and `test/e2e/security.spec.js` asserts
 that list exactly, so widening the surface fails a test.
@@ -77,6 +90,12 @@ lazily:
 - canvases are capped at `MAX_CANVAS_PIXELS` (16 M device pixels) so a deep zoom
   on a large page cannot allocate an enormous bitmap.
 
+Page painting and selectable-text construction are independent. If a malformed
+text map breaks the text layer after the canvas painted, Gloss keeps the
+visible page and disables selection only for that page. If painting itself
+fails, the page shows a recoverable **Retry page** control instead of remaining
+an unexplained white placeholder.
+
 Measured on a 300-page fixture, live canvases stay in single digits no matter
 how far you scroll; `reader.spec.js` asserts the bound.
 
@@ -135,15 +154,20 @@ copying always yields exactly what the document contained.
 ### Search
 
 `buildSearchIndex()` normalizes per grapheme cluster and records, for every
-normalized character index, the original index it came from. Matches therefore
-land on cluster boundaries and map back exactly, even when normalization changes
-length (`İ` → `i̇`). A query can never match half a conjunct.
+normalized character index, both original cluster boundaries. Matches therefore
+expand to whole clusters and map back exactly, even when normalization changes
+length (`İ` → `i̇`, or a precomposed Devanagari nukta form decomposes). A query
+can never become an empty highlight or match half a conjunct.
 
-Page text is built by concatenating pdf.js text items **with nothing between
-them**. pdf.js splits items on its own layout heuristics, and those splits land
-mid-word often enough to matter — in the Devanagari fixture, `प्रज्ञा` is split
-across two items. Inserting a separator would make such words unfindable, which
-is worse than the occasional run-together at a real line break.
+Page text uses geometry-aware boundaries rather than blindly joining or spacing
+every pdf.js item. Real lines and columns receive a separator, while same-line
+runs remain contiguous. A conservative recovery handles the fixture's unusual
+`प्र` + `ज्ञा` split across two mapped lines, preserving `प्रज्ञा` without making
+unrelated column text look like one phrase.
+
+Search extracts pages independently. A malformed page is counted as unreadable
+and skipped while the rest of the book remains searchable; the result counter
+makes the partial scope explicit.
 
 ---
 
@@ -165,6 +189,19 @@ never overwrite a newer local result. The popup shows the query immediately with
 a loading state, local results land first, and Wikipedia (if enabled) fills in
 afterwards.
 
+### Per-book glossary activation
+
+A generated JSON glossary carries `scope: "book"` plus the source PDF's relative
+path and PDF.js fingerprint. `main/glossary.js` answers only when either identity
+matches the document confirmed as open by the renderer. This lets many book
+glossaries stay loaded without returning a context-specific definition for the
+wrong PDF or filling the toolbar with inactive sources. Source-less legacy JSON
+and explicit `scope: "global"` files behave like general dictionaries.
+
+Reload is transactional: the replacement JSON is parsed completely before the
+working instance is closed. A malformed edit returns an error while the last
+valid copy continues answering lookups.
+
 ---
 
 ## State
@@ -174,6 +211,17 @@ afterwards.
 `documents.json` (per-document page, zoom, and scroll position; recents are
 derived from it). Writes are debounced and atomic (`tmp` + `rename`), with a
 synchronous flush on quit.
+
+Unreadable state is never deleted silently: Gloss copies it to a timestamped
+`.corrupt-*` file, starts from validated defaults, and tells the user. Runtime
+write failures are surfaced in the window (with rate limiting) instead of
+appearing only in a terminal log.
+
+Renderer failures are recoverable too. If Chromium loses the renderer process
+(for example after a GPU/driver or memory fault), `main.js` reloads the same
+window, reopens its last confirmed PDF through the normal authorized pipeline,
+and restores saved page/zoom/scroll state. Two automatic attempts are allowed
+per minute; a repeated loop becomes an explicit Reload/Quit dialog.
 
 Both files are inside the user's own trust boundary — a user who edits them can
 only affect their own session — so validation there is defensive, not a security

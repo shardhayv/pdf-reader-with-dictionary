@@ -5,6 +5,7 @@
  * (gitignored — these are build artifacts, not source).
  *
  *   latin.pdf       small Latin document with known words
+ *   encrypted.pdf   latin.pdf protected with user password "gloss"
  *   devanagari.pdf  Devanagari + Latin, rendered by Chromium so the text
  *                   carries real ToUnicode maps and extracts as Unicode
  *   large.pdf       300 pages, for virtualization and search timing
@@ -171,6 +172,7 @@ function writePlainFixtures() {
 
   fs.writeFileSync(path.join(OUT_DIR, 'latin.pdf'), buildLatinPdf(LATIN_PAGES));
   console.log('wrote latin.pdf');
+  buildEncryptedFixture();
 
   const largePages = Array.from({ length: 300 }, (_, i) => [
     `Page ${i + 1} of the large fixture`,
@@ -182,6 +184,31 @@ function writePlainFixtures() {
   ]);
   fs.writeFileSync(path.join(OUT_DIR, 'large.pdf'), buildLatinPdf(largePages));
   console.log('wrote large.pdf (300 pages)');
+}
+
+/**
+ * Build a real encrypted-PDF oracle when Ghostscript is available. The test
+ * suite skips only this fixture's flow if a contributor cannot generate it.
+ */
+function buildEncryptedFixture() {
+  const { spawnSync } = require('child_process');
+  const input = path.join(OUT_DIR, 'latin.pdf');
+  const output = path.join(OUT_DIR, 'encrypted.pdf');
+  const result = spawnSync('gs', [
+    '-q', '-sDEVICE=pdfwrite', '-dBATCH', '-dNOPAUSE',
+    '-sUserPassword=gloss', '-sOwnerPassword=gloss-owner',
+    '-dEncryptionR=3', '-dKeyLength=128',
+    `-sOutputFile=${output}`, input,
+  ], { stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8' });
+  if (result.error?.code === 'ENOENT') {
+    console.warn('skipped encrypted.pdf — Ghostscript (gs) is not installed');
+    return;
+  }
+  if (result.status !== 0) {
+    console.warn(`skipped encrypted.pdf — Ghostscript failed: ${(result.stderr || '').trim()}`);
+    return;
+  }
+  console.log('wrote encrypted.pdf (password: gloss)');
 }
 
 function spawnChromiumFixtures() {

@@ -26,20 +26,80 @@ const app = {
   passwordResolve: null,
 };
 
-// ── Boot ──────────────────────────────────────────────────────────────────────
+// ── Recovery boundary / boot ──────────────────────────────────────────────────
 
-(async function boot() {
+let lastUnexpectedNotice = 0;
+let lastStateSaveNotice = 0;
+let lastStorageNotice = 0;
+
+function logActionFailure(context, error) {
+  console.error(`Gloss ${context}:`, error);
+}
+
+function actionFailed(context, error, message) {
+  logActionFailure(context, error);
+  toast(message, { long: true });
+}
+
+function reportUnexpected(error, { fatal = false } = {}) {
+  console.error('Gloss unexpected error:', error);
+  const message = fatal
+    ? 'Gloss could not finish starting. Your PDFs and glossaries were not changed.'
+    : 'Something went wrong, but your document is still open. Try that action again.';
+
+  if (fatal) {
+    document.body.dataset.ready = 'error';
+    setLoading(false);
+    const empty = refs.emptyState();
+    show(empty);
+    empty.querySelector('.empty-title').textContent = 'Gloss needs a restart.';
+    empty.querySelector('.empty-sub').textContent = message;
+    const restart = $('open-pdf-cta');
+    restart.textContent = 'Restart Gloss';
+    // Capture beats the normal "Open PDF" listener if boot failed after the
+    // toolbar was wired. One click must do exactly one thing: restart.
+    restart.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      window.location.reload();
+    }, { capture: true, once: true });
+    announce(message);
+    return;
+  }
+
+  // A burst of rejected promises should produce one calm notice, not a wall of
+  // identical toasts. Details remain in the console for diagnosis.
+  const now = Date.now();
+  if (now - lastUnexpectedNotice > 2000) toast(message, { long: true });
+  lastUnexpectedNotice = now;
+}
+
+window.addEventListener('error', event => reportUnexpected(event.error || event.message));
+window.addEventListener('unhandledrejection', event => {
+  event.preventDefault();
+  reportUnexpected(event.reason);
+});
+
+async function boot() {
   app.prefs = await window.gloss.getPrefs();
   applyTheme(app.prefs.theme);
   lookup.setPrefs(app.prefs);
 
   popup.init({
     onEntryLookup: (word) => lookup.lookupEntry(word),
-    onExternalOpen: (url) => window.gloss.openExternal(url),
+    onExternalOpen: async (url) => {
+      try {
+        const result = await window.gloss.openExternal(url);
+        if (!result?.ok) throw new Error(result?.message || 'System link handler refused the URL');
+      } catch (error) {
+        actionFailed('could not open an external link', error, 'That link could not be opened.');
+      }
+    },
   });
   search.init();
   sidebar.init({
-    onVisibilityChange: (visible) => window.gloss.setPrefs({ sidebarVisible: visible }),
+    onVisibilityChange: (visible) => window.gloss.setPrefs({ sidebarVisible: visible })
+      .catch(error => logActionFailure('could not save the sidebar preference', error)),
   });
   prefsModal.init({
     getPrefs: () => app.prefs,
@@ -48,7 +108,8 @@ const app = {
       lookup.invalidateDictionaries();
       await refreshSourceChips();
     },
-    onRecentsCleared: () => renderEmptyState(),
+    onRecentsCleared: () => renderEmptyState().catch(error =>
+      logActionFailure('could not refresh recent documents', error)),
     sessionStats: async () => ({
       dictionaries: (await window.gloss.listDictionaries()).length,
       cachedLookups: lookup.cacheSize(),
@@ -73,13 +134,36 @@ const app = {
 
   window.gloss.onOpenFile(handleOpenResult);
   window.gloss.onCommand(handleCommand);
+  window.gloss.onDictionariesChanged(({ failed = [], warnings = [] } = {}) => {
+    lookup.invalidateDictionaries();
+    refreshSourceChips().catch(error =>
+      logActionFailure('could not refresh restored lookup sources', error));
+    const notices = [];
+    if (failed.length > 0) {
+      const names = failed.slice(0, 3).map(item => item.name).join(', ');
+      notices.push(`Could not restore ${names}. Add or reload ${failed.length === 1 ? 'it' : 'them'} in Preferences.`);
+    }
+    if (warnings.length > 0) {
+      notices.push(warnings[0].message || 'Gloss recovered from unreadable saved state.');
+    }
+    if (notices.length > 0) toast(notices.join(' '), { long: true });
+  });
+  window.gloss.onStorageError(({ message } = {}) => {
+    const now = Date.now();
+    if (now - lastStorageNotice > 30_000) {
+      toast(message || 'Gloss could not save its current state.', { long: true });
+      lastStorageNotice = now;
+    }
+  });
 
   window.addEventListener('resize', debounce(() => viewer.handleResize(), 180));
   document.body.dataset.ready = '1';
 
   // Listeners are live — main may now deliver a queued document.
   await window.gloss.notifyReady();
-})();
+}
+
+boot().catch(error => reportUnexpected(error, { fatal: true }));
 
 // ── Preferences / theme ───────────────────────────────────────────────────────
 
@@ -102,7 +186,10 @@ function applyTheme(theme) {
 async function refreshSourceChips() {
   const dicts = await window.gloss.listDictionaries();
   const chips = $('source-chips');
-  const parts = dicts.map(d => `
+  // Keep other books' glossaries loaded without letting them clutter or
+  // influence the document currently being read.
+  const visible = dicts.filter(d => d.applicable);
+  const parts = visible.map(d => `
     <button class="chip${d.enabled ? '' : ' chip--off'}" data-chip-path="${esc(d.path)}"
             title="${esc(d.name)} — click to ${d.enabled ? 'disable' : 'enable'}"
             aria-pressed="${d.enabled}">${esc(d.name)}</button>`);
@@ -110,8 +197,8 @@ async function refreshSourceChips() {
     <button class="chip chip--wiki${app.prefs.wikipediaEnabled ? '' : ' chip--off'}" data-chip-wiki="1"
             title="Wikipedia (${esc(app.prefs.wikipediaLang)}) — click to ${app.prefs.wikipediaEnabled ? 'disable' : 'enable'}"
             aria-pressed="${app.prefs.wikipediaEnabled}">Wikipedia</button>`);
-  if (dicts.length === 0) {
-    parts.unshift('<span class="chip-hint">No dictionaries</span>');
+  if (visible.length === 0) {
+    parts.unshift('<span class="chip-hint">No local dictionaries</span>');
   }
   chips.innerHTML = parts.join('');
 }
@@ -119,12 +206,24 @@ async function refreshSourceChips() {
 $('source-chips').addEventListener('click', async (e) => {
   const chip = e.target.closest('.chip');
   if (!chip) return;
-  if (chip.dataset.chipWiki) {
-    await applyPrefs({ wikipediaEnabled: !app.prefs.wikipediaEnabled });
-  } else {
-    await window.gloss.toggleDictionary(chip.dataset.chipPath);
-    lookup.invalidateDictionaries();
-    await refreshSourceChips();
+  chip.disabled = true;
+  try {
+    if (chip.dataset.chipWiki) {
+      await applyPrefs({ wikipediaEnabled: !app.prefs.wikipediaEnabled });
+    } else {
+      const result = await window.gloss.toggleDictionary(chip.dataset.chipPath);
+      if (!result?.success) throw new Error('Dictionary is no longer loaded');
+      lookup.invalidateDictionaries();
+      await refreshSourceChips();
+    }
+  } catch (error) {
+    actionFailed('could not change a lookup source', error,
+      'That lookup source could not be changed. Your current settings were kept.');
+    await refreshSourceChips().catch(() => {});
+  } finally {
+    // refreshSourceChips normally replaces this node; this covers a failed
+    // refresh so the control never remains permanently disabled.
+    if (chip.isConnected) chip.disabled = false;
   }
 });
 
@@ -151,13 +250,26 @@ async function renderEmptyState() {
 $('recent-list').addEventListener('click', async (e) => {
   const item = e.target.closest('[data-recent]');
   if (!item) return;
-  handleOpenResult(await window.gloss.openRecent(item.dataset.recent));
+  item.disabled = true;
+  try {
+    await handleOpenResult(await window.gloss.openRecent(item.dataset.recent));
+  } catch (error) {
+    actionFailed('could not open a recent PDF', error,
+      'That recent PDF could not be opened. Your current document was kept.');
+  } finally {
+    if (item.isConnected) item.disabled = false;
+  }
 });
 
 // ── Opening documents ─────────────────────────────────────────────────────────
 
 async function openViaDialog() {
-  handleOpenResult(await window.gloss.openPdfDialog());
+  try {
+    await handleOpenResult(await window.gloss.openPdfDialog());
+  } catch (error) {
+    actionFailed('could not show or complete the PDF picker', error,
+      'The PDF picker failed. Your current document was kept.');
+  }
 }
 
 async function handleOpenResult(result) {
@@ -167,14 +279,27 @@ async function handleOpenResult(result) {
     return;
   }
 
+  // A second-instance or file-manager request may arrive while another PDF
+  // is waiting for a password. Resolve that old prompt as cancelled before
+  // starting the new candidate.
+  if (app.passwordResolve) resolvePassword(null);
+
+  let opened;
   setLoading(true);
-  const opened = await viewer.openDocument(result.data, {
-    name: result.name,
-    path: result.path,
-    restore: result.state,
-    requestPassword: requestPassword,
-  });
-  setLoading(false);
+  try {
+    opened = await viewer.openDocument(result.data, {
+      name: result.name,
+      path: result.path,
+      restore: result.state,
+      requestPassword: requestPassword,
+    });
+  } catch (error) {
+    actionFailed('PDF renderer failed unexpectedly', error,
+      'Gloss could not display that PDF. Your current document was kept.');
+    return;
+  } finally {
+    setLoading(false);
+  }
 
   if (!opened.ok) {
     // The current document is untouched when an open fails, so leave the
@@ -191,8 +316,20 @@ async function handleOpenResult(result) {
   search.resetForNewDocument();
   hideBanner();
   announce(`Opened ${result.name}, ${viewer.pageCount()} pages`);
-  await window.gloss.confirmOpen(result.path); // now it may enter recents
-  await renderEmptyState();                    // keep the recent list current
+  try {
+    const confirmed = await window.gloss.confirmOpen(result.path, viewer.documentFingerprint());
+    if (!confirmed?.ok) throw new Error('The main process did not confirm the open document');
+  } catch (error) {
+    // Rendering succeeded. Do not undo it merely because session persistence
+    // failed; explain only the consequence that matters to the reader.
+    actionFailed('could not save the open document state', error,
+      'The PDF is open, but Gloss may not remember this reading position next time.');
+  }
+  lookup.invalidateDictionaries();             // active book glossary may change
+  await refreshSourceChips().catch(error =>
+    logActionFailure('could not refresh lookup sources after opening a PDF', error));
+  await renderEmptyState().catch(error =>
+    logActionFailure('could not refresh recents after opening a PDF', error));
 }
 
 function setLoading(loading) {
@@ -276,6 +413,13 @@ const persistState = debounce(() => {
     zoomMode: viewer.zoomMode(),
     zoomScale: viewer.zoomScale(),
     scrollFraction: viewer.scrollFraction(),
+  }).catch(error => {
+    logActionFailure('could not save reading position', error);
+    const now = Date.now();
+    if (now - lastStateSaveNotice > 30_000) {
+      toast('Gloss could not save your reading position.', { long: true });
+      lastStateSaveNotice = now;
+    }
   });
 }, STATE_SAVE_DEBOUNCE_MS);
 
@@ -344,7 +488,12 @@ function wireDragAndDrop() {
     hide(overlay);
     const file = e.dataTransfer?.files?.[0];
     if (!file) return;
-    handleOpenResult(await window.gloss.openDroppedPdf(file));
+    try {
+      await handleOpenResult(await window.gloss.openDroppedPdf(file));
+    } catch (error) {
+      actionFailed('could not open a dropped PDF', error,
+        'That dropped PDF could not be opened. Your current document was kept.');
+    }
   });
 }
 
@@ -372,7 +521,7 @@ function handleEscape() {
   if (prefsModal.isOpen()) { prefsModal.close(); return true; }
   if (search.isActive()) { search.closeSearch(); return true; }
   if (popup.isOpen()) { popup.closePopup({ force: true }); return true; }
-  if (app.readMode) { window.gloss.setReadMode(false); return true; }
+  if (app.readMode) { requestReadMode(false); return true; }
   return false;
 }
 
@@ -414,7 +563,7 @@ function wireKeyboard() {
     if (editing) return;
 
     if (e.key === 'F9') { e.preventDefault(); sidebar.toggle(); return; }
-    if (e.key === 'F11') { e.preventDefault(); window.gloss.setReadMode(!app.readMode); return; }
+    if (e.key === 'F11') { e.preventDefault(); requestReadMode(!app.readMode); return; }
     if (!viewer.hasDocument()) return;
 
     const container = refs.container();
@@ -457,13 +606,23 @@ function defineSelection() {
 function handleCommand({ name, arg }) {
   switch (name) {
     case 'open': openViaDialog(); break;
-    case 'openRecent': window.gloss.openRecent(arg).then(handleOpenResult); break;
-    case 'clearRecents': window.gloss.clearRecents().then(renderEmptyState); break;
+    case 'openRecent':
+      window.gloss.openRecent(arg).then(handleOpenResult).catch(error =>
+        actionFailed('could not open a recent PDF from the menu', error,
+          'That recent PDF could not be opened. Your current document was kept.'));
+      break;
+    case 'clearRecents':
+      window.gloss.clearRecents().then(renderEmptyState).catch(error =>
+        actionFailed('could not clear recent documents', error,
+          'Recent documents could not be cleared.'));
+      break;
     case 'addDictionaries':
       window.gloss.addDictionaries().then(async () => {
         lookup.invalidateDictionaries();
         await refreshSourceChips();
-      });
+      }).catch(error =>
+        actionFailed('could not add lookup sources', error,
+          'Dictionaries could not be added. Existing sources were kept.'));
       break;
     case 'prefs': prefsModal.open(); break;
     case 'search': search.openSearch(); break;
@@ -482,4 +641,9 @@ function setReadMode(on) {
   app.readMode = !!on;
   document.body.classList.toggle('read-mode', app.readMode);
   viewer.handleResize();
+}
+
+function requestReadMode(on) {
+  window.gloss.setReadMode(on).catch(error =>
+    actionFailed('could not change read mode', error, 'Read mode could not be changed.'));
 }

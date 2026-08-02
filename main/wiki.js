@@ -6,7 +6,7 @@
  * escapes rather than sanitizes them.
  */
 
-const { net } = require('electron');
+const { app, net } = require('electron');
 
 const WIKI_LANGS = new Set(['en', 'hi', 'ne', 'mai']);
 const TIMEOUT_MS = 6000;
@@ -28,7 +28,7 @@ async function lookup(lang, title) {
     res = await net.fetch(url, {
       signal: AbortSignal.timeout(TIMEOUT_MS),
       headers: {
-        'User-Agent': 'Gloss-PDF-Reader/2.0 (desktop; offline-first dictionary fallback)',
+        'User-Agent': `Gloss-PDF-Reader/${app.getVersion()} (desktop; offline-first dictionary fallback)`,
         Accept: 'application/json',
       },
     });

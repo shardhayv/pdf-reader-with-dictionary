@@ -1,0 +1,169 @@
+# Common words that never need glossing.
+#
+# Used by scripts/make-glossary.js to keep everyday vocabulary out of a
+# book's candidate list. Only base forms are listed — the builder also
+# strips regular suffixes (-s, -es, -ed, -ing, -ly, -er, -est, -ness,
+# -ment, -tion), so "adding", "affects" and "automatically" are all covered
+# by "add", "affect" and "automatic".
+#
+# Lines starting with # are ignored. Add your own words freely: this is a
+# plain list, and trimming it is how you tune the glossary to your level.
+
+# ── English: function words and everyday verbs ──────────────────────────────
+a able about above accept according account across act active actual add
+address admit advance advantage advice affect afford afraid after again
+against age agent agree ahead aim air all allow almost alone along already
+also alter although always among amount analyse analysis and animal announce
+another answer any anyone anything anyway apart appear apply appreciate
+approach appropriate approve area argue argument arise arm around arrange
+arrive art article as ask aspect assign assist associate assume at attach
+attack attempt attend attention attitude attract author authority automatic
+available average avoid award aware away back bad balance ball band bank bar
+base basic battle be bear beat beautiful because become bed before begin
+behalf behaviour behind belief believe belong below beneath benefit beside
+best better between beyond big bill bind bit black block blood blow blue
+board boat body book border born both bother bottle bottom box boy branch
+break breath bridge brief bright bring broad brother budget build burn
+business busy but buy by call calm campaign can cancel candidate capacity
+capital captain car card care career careful carry case cash cast catch
+cause cell centre century certain chain chair challenge chance change
+channel chapter character charge cheap check chief child choice choose
+church circle circumstance citizen city civil claim class clean clear clerk
+client climb clock close clothes cloud club coal coast code coffee cold
+collect college colour combine come comfort command comment commercial
+commission commit committee common communicate community company compare
+compete complete complex compute concern condition conduct conference
+confidence confirm conflict connect consider consist constant construct
+consult consumer contact contain content context continue contract contrast
+contribute control convention conversation convert cook cool copy corner
+correct cost could council count country couple course court cover crash
+create credit crew crime crisis critical cross crowd cry culture cup current
+custom customer cut damage dance danger dark data date daughter day deal
+dear death debate debt decade decide declare decline decrease deep defence
+define degree deliver demand democratic demonstrate deny depart depend
+deposit depth describe design desire desk despite destroy detail determine
+develop device die differ difficult dinner direct dirty disappear discover
+discuss disease display distance distinct distribute district divide do
+doctor document dog dollar domestic door double doubt down draw dream dress
+drink drive drop drug dry due during duty each early earn earth ease east
+easy eat economic edge edit educate effect effort egg eight either elect
+electric element else emerge emphasis employ empty enable encourage end
+enemy energy engage engine enjoy enough enter entire entry environment equal
+equip escape especially essential establish estate estimate even evening
+event ever every evidence exact examine example exceed except exchange
+excite exclude excuse execute exercise exist expand expect expense
+experience experiment expert explain explore express extend extent external
+extra eye face fact factor factory fail fair faith fall familiar family
+famous far farm fashion fast father fault favour fear feature federal feed
+feel fellow female few field fight figure file fill film final finance find
+fine finger finish fire firm first fish fit fix flat flight floor flow
+flower fly focus follow food foot for force foreign forest forget form
+formal former forward found four frame free frequent fresh friend from front
+fuel full fun function fund further future gain game gap garden gas gate
+gather general generate gentle get gift girl give glass go goal god gold
+good govern grade grand grant great green grey ground group grow guard guess
+guest guide gun hair half hall hand handle hang happen happy hard hardly
+harm hate have he head health hear heart heat heavy height help hence her
+here hero herself hide high hill him himself his history hit hold hole
+holiday home honest hope horse hospital host hot hotel hour house how
+however huge human hundred hurt husband ice idea identify if ill image
+imagine immediate impact implement imply import important impose impress
+improve in include income increase indeed independent index indicate
+individual industry influence inform initial injury inside insist instance
+instead institute instruct instrument insurance intend interest internal
+international interpret interview into introduce invest investigate invite
+involve issue it item its itself job join joint joke journey joy judge jump
+just justice keep key kill kind king kitchen knee know knowledge labour lack
+lady land language large last late later laugh launch law lay lead leaf
+league learn least leave left leg legal length less let letter level library
+lie life lift light like likely limit line link lip list listen little live
+load loan local locate lock long look lose loss lot loud love low luck lunch
+machine magazine main maintain major make male man manage manner many map
+march mark market marry mass master match material matter may maybe me meal
+mean measure meat media medical medicine meet member memory mention merely
+message metal method middle might mile military milk million mind mine
+minister minor minute mirror miss mission mistake mix model modern moment
+money month mood moon moral more morning most mother motion motor mount
+mouth move much multiple murder museum music must my myself name narrow
+nation native natural nature near necessary neck need negative neither nerve
+net network never new news next nice night no nobody noise none nor normal
+north nose not note nothing notice now nuclear number nurse object observe
+obtain obvious occasion occupy occur ocean odd of off offer office officer
+official often oil old on once one only onto open operate opinion opportunity
+oppose option or order ordinary organise origin original other otherwise
+ought our out outcome output outside over overall own pace pack page pain
+paint pair panel paper parent park part particular partner party pass past
+path patient pattern pay peace people per percent perfect perform perhaps
+period permit person phase phone photograph physical pick picture piece pilot
+pink place plan plant plastic plate play please pleasure plenty point police
+policy political pool poor popular population port position positive possible
+post pot potential pound pour power practice prefer prepare present press
+pressure pretty prevent previous price primary prime print prior private
+prize probably problem proceed process produce product profession profit
+program progress project promise promote proper propose protect prove provide
+public publish pull punish purchase pure purpose push put quality quarter
+question quick quiet quite quote race radio rail rain raise range rapid rare
+rate rather reach react read ready real realise reason receive recent
+recognise recommend record recover red reduce refer reflect reform refuse
+regard region register regular reject relate release relevant relief remain
+remember remove repeat replace reply report represent request require
+research reserve resist resolve resource respect respond rest restaurant
+result retain return reveal review revolution rich ride right ring rise risk
+river road rock role roll room root round route row royal rule run rural
+rush safe sail salary sale same sample satisfy save say scale scene schedule
+scheme school science score screen sea search season seat second secret
+section sector secure see seek seem select sell send senior sense sentence
+separate series serious serve service session set settle several severe sex
+shake shall shape share sharp she sheet shelf shift ship shoe shoot shop
+short should shoulder shout show shut side sight sign signal significant
+silence silver similar simple since sing single sink sir sister sit site
+situation size skill skin sky sleep slight slip slow small smell smile smoke
+snow so social society soft software soil soldier solution solve some someone
+something sometimes son song soon sorry sort sound source south space speak
+special specific speech speed spend spirit split sport spread spring square
+staff stage stair stand standard star start state station stay steady steal
+steel step stick still stock stone stop store storm story straight strange
+strategy street strength stress strike strong structure struggle student
+study stuff style subject submit succeed such sudden suffer sufficient sugar
+suggest suit summer sun supply support suppose sure surface surprise survey
+survive suspect sweet swim switch symbol system table take talk tall tape
+target task tax tea teach team tear technical technique technology telephone
+television tell temperature tend term terms terrible test text than thank
+that the theatre their them theme themselves then theory there therefore
+these they thick thin thing think third this those though thought thousand
+threat three through throw thus ticket tie time tiny tip tire title to today
+together tomorrow tone tonight too tool top total touch tough tour toward
+town trade tradition traffic train transfer transport travel treat tree trial
+trip trouble true trust truth try turn twice two type typical unable under
+understand undertake union unique unit unite universe university unless until
+up upon upper urban urge us use useful user usual value variety various vast
+vehicle version very via victim video view village visit voice volume vote
+wage wait walk wall want war warm warn wash waste watch water wave way we
+weak wear weather week weight welcome well west wet what when where whether
+which while white who whole whom whose why wide wife wild will win wind
+window wine wing winter wire wish with within without woman wonder wood word
+work world worry worth would wound write wrong yard year yellow yes yesterday
+yet you young your yourself youth
+
+# ── English: irregular forms the suffix rules cannot reach ──────────────────
+am are was were been being had has having did does done gone went came
+children men women people feet teeth mice geese
+chosen taken given written spoken broken driven eaten fallen forgotten
+known grown thrown seen shown drawn worn born held kept left lost made
+meant met paid put read said sat sold sent set shut slept sought spent
+stood told thought understood won wrote bought brought built caught
+cannot cant dont doesnt didnt wont wouldnt couldnt shouldnt isnt arent
+wasnt werent hasnt havent hadnt
+better best worse worst more most less least further furthest
+action addition ability category information section version position
+question direction condition attention operation situation application
+description definition collection connection selection reference
+
+# ── Devanagari: very common Hindi/Nepali words ──────────────────────────────
+और है हैं था थी थे हो होता होती होते होना कर करना करते करता करती किया गया
+गई गए यह वह ये वे जो कि तो ही भी नहीं ना को का की के में से पर एक दो तीन
+लिए साथ बाद पहले अब तब कब कहा कहते जब तक अगर लेकिन या फिर बहुत कुछ सब सभी
+कोई अपना अपने अपनी हम तुम आप मैं मेरा हमारा उनका इसका उसका यहाँ वहाँ कहाँ
+कैसे क्यों क्या कौन जैसे ऐसा वैसा इस उस दिन रात साल समय बात काम घर देश लोग
+आदमी औरत बच्चा पानी हाथ आँख नाम अच्छा बुरा बड़ा छोटा नया पुराना
+छ हुन्छ भयो गर्नु गर्ने भएको छैन हुन् तर पनि भने अनि हामी तिमी उहाँ
