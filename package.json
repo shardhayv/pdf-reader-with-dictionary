@@ -49,6 +49,7 @@
     "copyright": "Copyright © 2026 Shardhay Vatshyayan",
     "files": [
       "LICENSE",
+      "NOTICE",
       "THIRD_PARTY_NOTICES.md",
       "main.js",
       "preload.js",

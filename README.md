@@ -311,7 +311,8 @@ Copyright © 2026 **Shardhay Vatshyayan** (`@shardhayv`). Gloss 2.1.1 and later
 is free software licensed under the **GNU Affero General Public License v3.0
 only** — see [LICENSE](LICENSE). This keeps the application compatible with the
 AGPL-licensed `js-mdict` 7 runtime it distributes. Earlier revisions remain
-available under the license stated in those revisions.
+available under the license stated in those revisions. The project copyright
+and warranty notice is in [NOTICE](NOTICE).
 
 Runtime and development dependencies retain their own licenses; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
