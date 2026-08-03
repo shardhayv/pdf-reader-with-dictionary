@@ -29,9 +29,12 @@ const ZOOM_MAX = 4;
 
 const PREF_DEFAULTS = Object.freeze({
   theme: 'system',
+  wiktionaryEnabled: true,
+  wiktionaryAsFallback: true,
   wikipediaEnabled: true,
   wikipediaAsFallback: true,
   wikipediaLang: 'en',
+  webSearchLinkEnabled: true,
   sidebarVisible: false,
   sidebarTab: 'thumbnails',
   window: { bounds: null, isMaximized: false },
@@ -41,6 +44,7 @@ const PREF_DEFAULTS = Object.freeze({
 /** Keys the renderer may write through prefs:set. */
 const RENDERER_WRITABLE = new Set([
   'theme', 'wikipediaEnabled', 'wikipediaAsFallback', 'wikipediaLang',
+  'wiktionaryEnabled', 'wiktionaryAsFallback', 'webSearchLinkEnabled',
   'sidebarVisible', 'sidebarTab',
 ]);
 
@@ -81,9 +85,12 @@ function sanitizePrefs(raw) {
   }
   return {
     theme: asEnum(src.theme, THEMES, d.theme),
+    wiktionaryEnabled: asBool(src.wiktionaryEnabled, d.wiktionaryEnabled),
+    wiktionaryAsFallback: asBool(src.wiktionaryAsFallback, d.wiktionaryAsFallback),
     wikipediaEnabled: asBool(src.wikipediaEnabled, d.wikipediaEnabled),
     wikipediaAsFallback: asBool(src.wikipediaAsFallback, d.wikipediaAsFallback),
     wikipediaLang: asEnum(src.wikipediaLang, WIKI_LANGS, d.wikipediaLang),
+    webSearchLinkEnabled: asBool(src.webSearchLinkEnabled, d.webSearchLinkEnabled),
     sidebarVisible: asBool(src.sidebarVisible, d.sidebarVisible),
     sidebarTab: asEnum(src.sidebarTab, SIDEBAR_TABS, d.sidebarTab),
     window: {

@@ -237,33 +237,69 @@ function renderLookup() {
   const langOptions = WIKI_LANG_LABELS.map(([code, label]) =>
     `<option value="${code}" ${prefs.wikipediaLang === code ? 'selected' : ''}>${label}</option>`).join('');
 
+  const modeGroup = (name, isFallback) => `
+    <div class="prefs-radio-group" role="radiogroup" aria-label="${esc(name)} mode">
+      <label><input type="radio" name="${name}-mode" value="fallback" ${isFallback ? 'checked' : ''}>
+        Only when no dictionary has a match</label>
+      <label><input type="radio" name="${name}-mode" value="always" ${isFallback ? '' : 'checked'}>
+        Always, alongside dictionary results</label>
+    </div>`;
+
   els.body.innerHTML = `
     <h3 class="prefs-title">Lookup</h3>
+
+    <div class="prefs-field">
+      <label class="switch">
+        <input type="checkbox" id="wikt-enabled" ${prefs.wiktionaryEnabled ? 'checked' : ''}>
+        <span class="switch-slider"></span>
+      </label>
+      <label for="wikt-enabled">Use Wiktionary for word meanings</label>
+    </div>
+    <div class="prefs-subgroup ${prefs.wiktionaryEnabled ? '' : 'prefs-subgroup--disabled'}">
+      ${modeGroup('wikt', prefs.wiktionaryAsFallback)}
+      <p class="prefs-hint">Senses, parts of speech and usage — the dictionary answer.
+      Devanagari headwords come back glossed in English.</p>
+    </div>
+
     <div class="prefs-field">
       <label class="switch">
         <input type="checkbox" id="wiki-enabled" ${prefs.wikipediaEnabled ? 'checked' : ''}>
         <span class="switch-slider"></span>
       </label>
-      <label for="wiki-enabled">Use Wikipedia as an online source</label>
+      <label for="wiki-enabled">Use Wikipedia for names and concepts</label>
     </div>
-    <div class="prefs-subgroup ${prefs.wikipediaEnabled ? '' : 'prefs-subgroup--disabled'}" id="wiki-group">
-      <div class="prefs-radio-group" role="radiogroup" aria-label="Wikipedia mode">
-        <label><input type="radio" name="wiki-mode" value="fallback" ${prefs.wikipediaAsFallback ? 'checked' : ''}>
-          Only when no dictionary has a match</label>
-        <label><input type="radio" name="wiki-mode" value="always" ${prefs.wikipediaAsFallback ? '' : 'checked'}>
-          Always, alongside dictionary results</label>
-      </div>
-      <div class="prefs-field">
-        <label for="wiki-lang">Wikipedia language</label>
-        <select id="wiki-lang">${langOptions}</select>
-      </div>
+    <div class="prefs-subgroup ${prefs.wikipediaEnabled ? '' : 'prefs-subgroup--disabled'}">
+      ${modeGroup('wiki', prefs.wikipediaAsFallback)}
     </div>
-    <p class="prefs-hint">Dictionary lookups are entirely local. Wikipedia is the only network
-    request Gloss ever makes, and only at lookup time.</p>`;
 
-  $('wiki-enabled').addEventListener('change', async (e) => {
-    await savePreference({ wikipediaEnabled: e.target.checked }, renderLookup);
-  });
+    <div class="prefs-field">
+      <label for="wiki-lang">Preferred language</label>
+      <select id="wiki-lang">${langOptions}</select>
+    </div>
+
+    <div class="prefs-field">
+      <label class="switch">
+        <input type="checkbox" id="websearch-enabled" ${prefs.webSearchLinkEnabled ? 'checked' : ''}>
+        <span class="switch-slider"></span>
+      </label>
+      <label for="websearch-enabled">Show a “Search the web” link in the popup</label>
+    </div>
+
+    <p class="prefs-hint">Dictionary and glossary lookups are entirely local. Wiktionary and
+    Wikipedia are the only requests Gloss makes on its own, and only at lookup time. The web
+    search link sends nothing anywhere until you click it, and then it opens your browser.</p>`;
+
+  $('wikt-enabled').addEventListener('change', (e) =>
+    savePreference({ wiktionaryEnabled: e.target.checked }, renderLookup));
+  $('wiki-enabled').addEventListener('change', (e) =>
+    savePreference({ wikipediaEnabled: e.target.checked }, renderLookup));
+  $('websearch-enabled').addEventListener('change', (e) =>
+    savePreference({ webSearchLinkEnabled: e.target.checked }, renderLookup));
+
+  for (const radio of els.body.querySelectorAll('[name="wikt-mode"]')) {
+    radio.addEventListener('change', (e) => savePreference(
+      { wiktionaryAsFallback: e.target.value === 'fallback' }, renderLookup));
+  }
   for (const radio of els.body.querySelectorAll('[name="wiki-mode"]')) {
     radio.addEventListener('change', (e) => savePreference(
       { wikipediaAsFallback: e.target.value === 'fallback' }, renderLookup));

@@ -169,7 +169,7 @@ test('renderer has no Node or Electron capabilities', async () => {
   // that accidentally widening it fails this test.
   expect(exposure.glossKeys).toEqual([
     'addDictionaries', 'clearRecents', 'confirmOpen', 'getPrefs', 'getRecents',
-    'listDictionaries', 'lookupDictionaries', 'lookupWikipedia', 'notifyReady',
+    'listDictionaries', 'lookupDictionaries', 'lookupWikipedia', 'lookupWiktionary', 'notifyReady',
     'onCommand', 'onDictionariesChanged', 'onOpenFile', 'onStorageError', 'openDroppedPdf', 'openExternal', 'openPdfDialog',
     'openRecent', 'reloadDictionary', 'removeDictionary', 'reorderDictionaries', 'setPrefs',
     'setReadMode', 'toggleDictionary', 'updateDocState',

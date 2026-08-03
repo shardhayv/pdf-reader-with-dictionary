@@ -21,18 +21,30 @@ Created and maintained by **[Shardhay Vatshyayan](https://github.com/shardhayv)*
 
 Gloss is a desktop PDF reader built around one idea: when you don't know a word,
 looking it up should take one gesture, not ten. Select any word and a definition
-appears next to it — from **your own MDX dictionaries**, with Wikipedia as an
-optional fallback. For each book, Gloss can also use a small **AI-assisted JSON
-glossary** containing the names, coined words, and context-specific meanings
-that no general dictionary knows.
+appears next to it — from **your own MDX dictionaries**, with **Wiktionary** and
+**Wikipedia** as optional online fallbacks. For each book, Gloss can also use a
+small **AI-assisted JSON glossary** containing the names, coined words, and
+context-specific meanings that no general dictionary knows.
+
+The three tiers answer different questions, in this order:
+
+1. **Your dictionaries and glossaries** — offline, yours, always first.
+2. **Wiktionary** — *what does this word mean*: senses, part of speech, usage.
+3. **Wikipedia** — *what is this thing*: the encyclopedia article behind a name.
+
+Between them there is rarely a reason to leave the reader for a search engine.
+When there is, a **Search the web** link in the popup hands the word to your
+browser — nothing is sent anywhere until you click it.
 
 It works equally well with Latin and Devanagari text. Selecting `काठमाडौँ` gives
 you the whole word, chandrabindu and all; searching for `क्षेत्र` finds it even
-when the conjunct is split across two internal text runs.
+when the conjunct is split across two internal text runs. Devanagari headwords
+come back from Wiktionary glossed in English — `जल` yields the Hindi, Nepali and
+Sanskrit senses side by side.
 
-Dictionary lookups are entirely local. Wikipedia is the only network request
-Gloss ever makes, and only when you ask for a word. There are no accounts, no
-telemetry, and no analytics.
+Dictionary and glossary lookups are entirely local. Wiktionary and Wikipedia are
+the only requests Gloss makes on its own, and only when you ask for a word. There
+are no accounts, no telemetry, and no analytics.
 
 ---
 
@@ -44,8 +56,11 @@ telemetry, and no analytics.
 | **Latin and Devanagari** | Unicode-aware selection, search, and lookup that never split a conjunct or drop a matra |
 | **Your dictionaries** | Load any number of `.mdx` files without freezing the reader, set their priority, toggle them per lookup |
 | **Per-book glossaries** | Build an AI-assisted JSON glossary for one PDF; it activates automatically only for that book |
+| **Wiktionary meanings** | Optional online dictionary: senses, part of speech, examples, with in-popup cross-references |
 | **Wikipedia fallback** | Optional, in English, Hindi, Nepali, or Maithili |
+| **Search the web** | Opt-out link that opens the word in your browser — the only thing Gloss ever hands a search engine |
 | **Big documents** | Only a handful of pages are ever in memory, so a 300-page PDF opens instantly |
+| **Clickable links** | Link annotations open in your browser or jump within the document; double-click still defines the word |
 | **Find in document** | Unicode-aware search with result counts and highlighting |
 | **Pages and outline** | Lazy thumbnail sidebar and the document's own table of contents |
 | **Zoom** | Fit width, fit page, and free zoom with `Ctrl`+wheel anchored under the cursor |
@@ -108,7 +123,7 @@ npm run dist:dir        # unpacked build into dist/linux-unpacked/
 Install and run the `.deb`:
 
 ```bash
-sudo apt install ./dist/gloss_2.1.1_amd64.deb
+sudo apt install ./dist/gloss_2.2.0_amd64.deb
 gloss                      # or launch from your applications menu
 gloss ~/Documents/paper.pdf
 ```
@@ -189,12 +204,13 @@ Gloss follows Electron's two-process model with the renderer fully sandboxed.
 │  dicts.js     dictionary registry and candidate lookup       │
 │  glossary.js  JSON glossary backend (one per book)           │
 │  mdx-worker*  off-main-thread MDX parsing and lookup          │
-│  wiki.js      the only network access in the app             │
+│  wiktionary.js  online dictionary tier (network)             │
+│  wiki.js      online encyclopedia tier (network)             │
 │  security.js  navigation, window, and permission denial      │
 │  windows.js   window lifecycle, bounds, menu                 │
 │  ipc.js       the entire IPC surface                         │
 └───────────────────────────┬──────────────────────────────────┘
-                            │ contextBridge — 24 typed methods
+                            │ contextBridge — 25 typed methods
 ┌───────────────────────────▼──────────────────────────────────┐
 │  Preload — preload.js  (sandboxed, context-isolated)         │
 │  Resolves dropped files to paths; exposes window.gloss       │
@@ -206,6 +222,7 @@ Gloss follows Electron's two-process model with the renderer fully sandboxed.
 │  viewer.js    document lifecycle, virtualized rendering      │
 │  text.js      Unicode segmentation, candidates, search index │
 │  selection.js decides when a selection becomes a lookup      │
+│  links.js     decides when a PDF link becomes an action      │
 │  lookup.js    lookup orchestration and race prevention       │
 │  popup.js     sanitization and the definition surface        │
 │  search.js    find-in-document                               │

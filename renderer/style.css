@@ -382,6 +382,38 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
 }
 .pdf-text-layer ::selection { background: var(--selection); }
 
+/* Link annotations. The layer never takes pointer events — text selection is
+   the primary gesture and must reach the text layer underneath. links.js
+   hit-tests these rectangles instead, and sets --hover itself. */
+.pdf-link-layer {
+  position: absolute; inset: 0;
+  overflow: hidden;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+/* No persistent decoration: documents style their own links, and drawing a
+   second underline over the page's would be wrong. Hover and focus are the
+   affordance, as in every other PDF reader. */
+.pdf-link {
+  position: absolute;
+  border-radius: 2px;
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+.pdf-link--hover { background: var(--accent-wash); }
+.pdf-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  background: var(--accent-wash);
+}
+/* The overlay cannot own the cursor, so the body carries it while hovering. */
+body.has-link-hover .pdf-text-layer span { cursor: pointer; }
+body.has-link-hover #pdf-container { cursor: pointer; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pdf-link { transition: none; }
+}
+
 ::highlight(gloss-search)         { background-color: var(--accent-wash); }
 ::highlight(gloss-search-current) { background-color: var(--accent-strong); }
 
@@ -537,6 +569,58 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
   border: 1px solid var(--rule); padding: 3px 6px; text-align: left;
 }
 .popup-definition font { color: inherit !important; }
+
+/* ─── Wiktionary ──────────────────────────────────────────────────────────── */
+
+.wikt-body { margin-bottom: 12px; }
+
+.wikt-section + .wikt-section {
+  margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.wikt-heading {
+  display: flex; align-items: baseline; gap: 7px;
+  margin: 0 0 6px;
+  font-family: var(--sans); font-size: 11.5px; font-weight: 600;
+}
+.wikt-lang { color: var(--ink-soft); }
+.wikt-pos {
+  font-weight: 500; font-style: italic;
+  color: var(--ink-faint);
+}
+
+.wikt-senses {
+  margin: 0; padding-left: 18px;
+  /* Sense numbers are part of the reading, not decoration. */
+  list-style: decimal;
+}
+.wikt-sense { margin-bottom: 6px; }
+.wikt-sense::marker { color: var(--ink-faint); font-size: 12px; }
+.wikt-def > p { margin: 0 0 6px; }
+.wikt-def > p:last-child { margin-bottom: 0; }
+/* Wiktionary nests sub-senses inside a sense; keep them subordinate. */
+.wikt-def ol, .wikt-def ul {
+  margin: 4px 0 0; padding-left: 16px;
+  font-size: 13px; color: var(--ink-soft);
+}
+.wikt-def li { margin-bottom: 2px; }
+
+.wikt-example {
+  margin: 5px 0 0;
+  padding: 1px 0 1px 10px;
+  border-left: 2px solid var(--rule-strong);
+  font-size: 12.5px; font-style: italic; line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.popup-websearch {
+  margin-top: 10px; padding-top: 9px;
+  border-top: 1px solid var(--rule);
+  font-family: var(--sans); font-size: 12px;
+}
+.popup-websearch .def-link { color: var(--ink-faint); text-decoration: none; }
+.popup-websearch .def-link:hover { color: var(--accent); text-decoration: underline; }
 
 .def-link {
   display: inline-flex; align-items: center; gap: 4px;

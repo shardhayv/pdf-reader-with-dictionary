@@ -91,6 +91,69 @@ function sizeWrapper(wrapper, n) {
 
 // ── Placeholders & observers ──────────────────────────────────────────────────
 
+// ── Link annotations ──────────────────────────────────────────────────────────
+
+/**
+ * Build the clickable-link overlay for a page.
+ *
+ * Only Link annotations are honoured — widgets, forms and popups are
+ * deliberately not rendered. The layer takes no pointer events at all: text
+ * selection is Gloss's primary gesture and must never be intercepted by an
+ * invisible box. Clicks are resolved by hit-testing in links.js instead, and
+ * the anchors carry no href, exactly like sanitized dictionary links, so
+ * nothing here can navigate the app frame.
+ */
+function buildLinkLayer(annotations, viewport) {
+  const links = [];
+  for (const a of annotations) {
+    if (a?.subtype !== 'Link') continue;
+    // pdf.js resolves and filters `url`; unsafeUrl is never used.
+    const url = typeof a.url === 'string' ? a.url : '';
+    const external = /^https?:\/\//i.test(url) ? url : '';
+    if (!external && !a.dest) continue;
+    if (!Array.isArray(a.rect) || a.rect.length !== 4) continue;
+
+    const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(a.rect);
+    const left = Math.min(x1, x2);
+    const top = Math.min(y1, y2);
+    const width = Math.abs(x2 - x1);
+    const height = Math.abs(y2 - y1);
+    if (width < 1 || height < 1) continue;
+
+    const el = document.createElement('a');
+    el.className = 'pdf-link';
+    el.setAttribute('role', 'link');
+    el.setAttribute('tabindex', '0');
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+    el.style.width = `${width}px`;
+    el.style.height = `${height}px`;
+    if (external) {
+      el.dataset.external = external;
+      el.title = external;
+      el.setAttribute('aria-label', `Link: ${external}`);
+    } else {
+      el.dataset.dest = '1';
+      el._dest = a.dest;
+      el.setAttribute('aria-label', 'Link to another place in this document');
+    }
+    links.push(el);
+  }
+  if (links.length === 0) return null;
+
+  const layer = document.createElement('div');
+  layer.className = 'pdf-link-layer';
+  layer.append(...links);
+  return layer;
+}
+
+/** Every link element on a rendered page, in document order. */
+export function linkElementsFor(n) {
+  const wrapper = wrapperFor(n);
+  if (!wrapper || wrapper.dataset.rendered !== 'true') return [];
+  return [...wrapper.querySelectorAll('.pdf-link')];
+}
+
 function makePlaceholder(n) {
   const el = document.createElement('div');
   el.className = 'page-placeholder';
@@ -248,9 +311,20 @@ export function renderPage(n) {
         textLayerDiv = null;
         wrapper._textDivs = null;
       }
+      // Link annotations are a third independent concern: a page with broken
+      // annotations still paints and still selects.
+      let linkLayerDiv = null;
+      try {
+        const annotations = await page.getAnnotations({ intent: 'display' });
+        if (gen !== state.generation) return;
+        linkLayerDiv = buildLinkLayer(annotations, viewport);
+      } catch (annotationError) {
+        console.warn(`gloss: links unavailable on page ${n}:`, annotationError?.message || annotationError);
+        linkLayerDiv = null;
+      }
       if (gen !== state.generation || wrapper.dataset.rendered !== 'true') return;
 
-      wrapper.replaceChildren(...(textLayerDiv ? [canvas, textLayerDiv] : [canvas]));
+      wrapper.replaceChildren(...[canvas, textLayerDiv, linkLayerDiv].filter(Boolean));
       emit('pagerendered', n);
     } catch (err) {
       state.renderTasks.delete(n);
@@ -449,8 +523,11 @@ export function setZoom(mode, explicitScale = null, anchor = null) {
         canvas.style.width = `${Math.floor(w * newScale)}px`;
         canvas.style.height = `${Math.floor(h * newScale)}px`;
       }
-      const textLayer = wrapper.querySelector('.pdf-text-layer');
-      if (textLayer) textLayer.style.transform = factor === 1 ? '' : `scale(${factor})`;
+      // The text and link layers are laid out for the scale they were built
+      // at; scale them together until the page is re-rendered sharply.
+      for (const layer of wrapper.querySelectorAll('.pdf-text-layer, .pdf-link-layer')) {
+        layer.style.transform = factor === 1 ? '' : `scale(${factor})`;
+      }
       if (Math.abs(factor - 1) > 0.0005) wrapper.dataset.stale = '1';
     }
   }
@@ -663,14 +740,25 @@ export async function getOutline() {
   }
 }
 
-/** Resolve an outline destination to a page number (1-based) or null. */
+/**
+ * Resolve an outline entry or link annotation destination to a page number
+ * (1-based) or null. A destination's first element is normally a page
+ * reference, but it may already be a page index, and a named destination has
+ * to be looked up in the document first.
+ */
 export async function resolveDestination(dest) {
-  if (!state.doc) return null;
+  if (!state.doc || !dest) return null;
+  const gen = state.generation;
   try {
     const explicit = typeof dest === 'string' ? await state.doc.getDestination(dest) : dest;
+    if (gen !== state.generation) return null;
     if (!Array.isArray(explicit) || explicit.length === 0) return null;
-    const pageIndex = await state.doc.getPageIndex(explicit[0]);
-    return pageIndex + 1;
+    const ref = explicit[0];
+    if (typeof ref === 'number') return Number.isInteger(ref) ? ref + 1 : null;
+    if (!ref || typeof ref !== 'object') return null;
+    const pageIndex = await state.doc.getPageIndex(ref);
+    if (gen !== state.generation) return null;
+    return Number.isInteger(pageIndex) ? pageIndex + 1 : null;
   } catch {
     return null;
   }

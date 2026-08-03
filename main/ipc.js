@@ -11,6 +11,7 @@ const paths = require('./paths');
 const store = require('./store');
 const dicts = require('./dicts');
 const wiki = require('./wiki');
+const wiktionary = require('./wiktionary');
 const windows = require('./windows');
 const { guarded } = require('./security');
 
@@ -197,8 +198,9 @@ function register() {
   ipcMain.handle('dict:lookup', guarded((event, candidates) =>
     dicts.lookup(candidates, currentDocByContents.get(event.sender.id))));
 
-  // ── Wikipedia ──────────────────────────────────────────────────────────────
+  // ── Online sources ─────────────────────────────────────────────────────────
   ipcMain.handle('wiki:lookup', guarded((_e, lang, title) => wiki.lookup(lang, title)));
+  ipcMain.handle('wiktionary:lookup', guarded((_e, lang, word) => wiktionary.lookup(lang, word)));
 
   // ── Preferences ────────────────────────────────────────────────────────────
   ipcMain.handle('prefs:get', guarded(() => store.getPrefs()));

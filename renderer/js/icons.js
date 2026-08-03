@@ -23,4 +23,5 @@ export const icons = {
   spinner: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="spin"><path d="M21 12a9 9 0 1 1-6.2-8.56" stroke-linecap="round"/></svg>`,
   offline: svg('<path d="m2 2 20 20"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M5 12.5a9.7 9.7 0 0 1 5.4-2.8M16.2 10.6c1 .5 2 1.1 2.8 1.9"/><path d="M2 8.8A15.7 15.7 0 0 1 7 6M12.7 5.1A15.7 15.7 0 0 1 22 8.8"/><path d="M12 20h.01"/>'),
   chevronRight: svg('<path d="m9 18 6-6-6-6"/>'),
+  search: svg('<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>'),
 };

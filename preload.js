@@ -51,8 +51,9 @@ contextBridge.exposeInMainWorld('gloss', {
   onDictionariesChanged: (cb) => on('gloss:dictionaries-changed', cb),
   onStorageError: (cb) => on('gloss:storage-error', cb),
 
-  // Wikipedia (network lives in main)
+  // Online sources (network lives in main)
   lookupWikipedia: (lang, title) => ipcRenderer.invoke('wiki:lookup', lang, title),
+  lookupWiktionary: (lang, word) => ipcRenderer.invoke('wiktionary:lookup', lang, word),
 
   // Preferences
   getPrefs: () => ipcRenderer.invoke('prefs:get'),

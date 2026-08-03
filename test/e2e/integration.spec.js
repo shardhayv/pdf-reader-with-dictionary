@@ -79,7 +79,9 @@ test('a dictionary failure is explained while other reader controls stay usable'
     });
     await page.evaluate(async () => {
       const lookup = await import('./js/lookup.js');
-      lookup.setPrefs({ wikipediaEnabled: false });
+      // Both online tiers off: this test is about the local failure notice,
+      // and it must not depend on a network.
+      lookup.setPrefs({ wikipediaEnabled: false, wiktionaryEnabled: false });
       await lookup.lookupSelection('serendipity', null);
     });
 
@@ -363,6 +365,195 @@ test('a real encrypted PDF handles wrong, correct, and cancelled passwords', asy
     await expect(page.locator('#password-overlay')).toBeHidden();
     expect(await page.title()).toContain('encrypted.pdf');
     expect(await page.locator('.pdf-page-wrapper canvas').count()).toBe(canvasCount);
+  } finally {
+    await app.close();
+  }
+});
+
+/** Stands in for the bounding rect of a selected word near the top of the page. */
+const ANCHOR = { top: 90, bottom: 112, left: 40, right: 130, width: 90, height: 22 };
+
+test('Wiktionary senses render and their links become in-popup lookups', async () => {
+  const { app, page } = await launchGloss({ open: 'latin.pdf' });
+  try {
+    await waitForDocument(page);
+
+    // Stub the network tier so the test is deterministic and offline. The
+    // payload is the real shape main/wiktionary.js produces.
+    await app.evaluate(({ ipcMain }) => {
+      ipcMain.removeHandler('wiktionary:lookup');
+      ipcMain.handle('wiktionary:lookup', (_e, _lang, word) => {
+        if (word === 'short') {
+          return {
+            status: 'hit', word: 'short', url: 'https://en.wiktionary.org/wiki/short',
+            sections: [{
+              lang: 'en', language: 'English', partOfSpeech: 'Adjective',
+              senses: [{ definition: 'Having a small distance.', examples: [] }],
+            }],
+          };
+        }
+        return {
+          status: 'hit', word: 'ephemeral', url: 'https://en.wiktionary.org/wiki/ephemeral',
+          sections: [
+            {
+              lang: 'en', language: 'English', partOfSpeech: 'Adjective',
+              senses: [
+                { definition: 'Lasting for a <a href="entry://short">short</a> period of time.', examples: ['<i>an ephemeral victory</i>'] },
+                { definition: 'Existing for only one day.', examples: [] },
+              ],
+            },
+            {
+              lang: 'en', language: 'English', partOfSpeech: 'Noun',
+              senses: [{ definition: 'Something which lasts briefly.', examples: [] }],
+            },
+          ],
+        };
+      });
+      ipcMain.removeHandler('wiki:lookup');
+      ipcMain.handle('wiki:lookup', () => ({ status: 'miss' }));
+    });
+
+    // A real anchor rect, as a selection would supply: without one the popup
+    // is never positioned and can sit partly offscreen, where clicks land on
+    // the page behind it.
+    await page.evaluate(async (anchor) => {
+      const lookup = await import('./js/lookup.js');
+      lookup.setPrefs({
+        wiktionaryEnabled: true, wiktionaryAsFallback: true,
+        wikipediaEnabled: false, wikipediaLang: 'en', webSearchLinkEnabled: true,
+      });
+      await lookup.lookupSelection('ephemeral', anchor);
+    }, ANCHOR);
+
+    await expect(page.locator('.source-badge--wikt')).toContainText('Wiktionary');
+    await expect(page.locator('.wikt-section')).toHaveCount(2);
+    await expect(page.locator('.wikt-section').first().locator('.wikt-pos')).toHaveText('Adjective');
+    await expect(page.locator('.wikt-section').first().locator('.wikt-sense')).toHaveCount(2);
+    await expect(page.locator('.wikt-example').first()).toContainText('an ephemeral victory');
+
+    // A link inside a definition is a cross-reference, never a live href.
+    const link = page.locator('.wikt-def [data-entry]').first();
+    await expect(link).toHaveText('short');
+    expect(await link.getAttribute('href')).toBeNull();
+
+    await link.click();
+    await expect(page.locator('#popup-word')).toHaveText('short');
+    await expect(page.locator('.wikt-def').first()).toContainText('Having a small distance');
+
+    // …and the back button returns to the word that was selected.
+    await page.click('#popup-back');
+    await expect(page.locator('#popup-word')).toHaveText('ephemeral');
+  } finally {
+    await app.close();
+  }
+});
+
+test('the web-search link is opt-out and hands the word to the browser, not the app', async () => {
+  const { app, page } = await launchGloss({ open: 'latin.pdf' });
+  try {
+    await waitForDocument(page);
+
+    const opened = await app.evaluate(({ ipcMain, shell }) => {
+      globalThis.__opened = [];
+      shell.openExternal = async (url) => { globalThis.__opened.push(url); };
+      ipcMain.removeHandler('wiktionary:lookup');
+      ipcMain.handle('wiktionary:lookup', () => ({ status: 'miss' }));
+      ipcMain.removeHandler('wiki:lookup');
+      ipcMain.handle('wiki:lookup', () => ({ status: 'miss' }));
+      return true;
+    });
+    expect(opened).toBe(true);
+
+    await page.evaluate(async (anchor) => {
+      const lookup = await import('./js/lookup.js');
+      lookup.setPrefs({ wiktionaryEnabled: false, wikipediaEnabled: false, webSearchLinkEnabled: true });
+      await lookup.lookupSelection('serendipity', anchor);
+    }, ANCHOR);
+
+    await page.click('.popup-websearch .def-link');
+    const urls = await app.evaluate(() => globalThis.__opened);
+    expect(urls).toHaveLength(1);
+    expect(urls[0]).toBe('https://www.google.com/search?q=define%20serendipity');
+
+    // Turning it off removes the link entirely.
+    await page.evaluate(async (anchor) => {
+      const lookup = await import('./js/lookup.js');
+      lookup.setPrefs({ wiktionaryEnabled: false, wikipediaEnabled: false, webSearchLinkEnabled: false });
+      await lookup.lookupSelection('serendipity', anchor);
+    }, ANCHOR);
+    await expect(page.locator('.popup-websearch')).toHaveCount(0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('PDF link annotations open externally and jump pages, without navigating the app', async () => {
+  const { app, page } = await launchGloss({ open: 'links.pdf' });
+  try {
+    await waitForDocument(page);
+    await app.evaluate(({ shell }) => {
+      globalThis.__opened = [];
+      shell.openExternal = async (url) => { globalThis.__opened.push(url); };
+    });
+
+    const links = page.locator('.pdf-page-wrapper[data-page-number="1"] .pdf-link');
+    await expect(links).toHaveCount(2);
+
+    // The overlay is inert markup: no href, and no pointer events, so text
+    // selection underneath a link is unaffected.
+    expect(await links.first().getAttribute('href')).toBeNull();
+    expect(await links.first().evaluate(el => getComputedStyle(el.parentElement).pointerEvents))
+      .toBe('none');
+
+    // Hovering a link is what marks it as clickable.
+    const box = await links.first().boundingBox();
+    const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    await page.mouse.move(centre.x, centre.y);
+    await expect(links.first()).toHaveClass(/pdf-link--hover/);
+    await expect(page.locator('body')).toHaveClass(/has-link-hover/);
+
+    // A single click hands the URL to the system browser.
+    await page.mouse.click(centre.x, centre.y);
+    await expect.poll(() => app.evaluate(() => globalThis.__opened))
+      .toEqual(['https://example.org/gloss-link-test']);
+
+    // Double-clicking a linked word looks it up instead: the reader's primary
+    // gesture wins over link activation.
+    await app.evaluate(() => { globalThis.__opened = []; });
+    await page.mouse.dblclick(centre.x, centre.y);
+    await page.waitForTimeout(900);
+    expect(await app.evaluate(() => globalThis.__opened)).toEqual([]);
+    await expect(page.locator('#popup')).toBeVisible();
+
+    // The internal link jumps to its destination page.
+    await page.keyboard.press('Escape');
+    const internal = links.nth(1);
+    await internal.scrollIntoViewIfNeeded();
+    const destBox = await internal.boundingBox();
+    await page.mouse.click(destBox.x + destBox.width / 2, destBox.y + destBox.height / 2);
+    await expect(page.locator('#page-input')).toHaveValue('2');
+    expect(await app.evaluate(() => globalThis.__opened)).toEqual([]);
+  } finally {
+    await app.close();
+  }
+});
+
+test('a click that misses every link does nothing', async () => {
+  const { app, page } = await launchGloss({ open: 'links.pdf' });
+  try {
+    await waitForDocument(page);
+    await app.evaluate(({ shell }) => {
+      globalThis.__opened = [];
+      shell.openExternal = async (url) => { globalThis.__opened.push(url); };
+    });
+
+    // Same x as the links, but on the unlinked line below them.
+    const box = await page.locator('.pdf-page-wrapper[data-page-number="1"] .pdf-link')
+      .first().boundingBox();
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height * 4);
+    await page.waitForTimeout(500);
+    expect(await app.evaluate(() => globalThis.__opened)).toEqual([]);
+    await expect(page.locator('#page-input')).toHaveValue('1');
   } finally {
     await app.close();
   }

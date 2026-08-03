@@ -12,7 +12,7 @@ npm test             # both
 ## Fixtures
 
 Test PDFs are generated, not committed (`test/fixtures/` is gitignored).
-`npm run fixtures` produces six (the encrypted fixture is optional if
+`npm run fixtures` produces seven (the encrypted fixture is optional if
 Ghostscript is unavailable):
 
 | Fixture | Built by | Exercises |
@@ -23,6 +23,7 @@ Ghostscript is unavailable):
 | `devanagari.pdf` | HarfBuzz + hand-written ToUnicode | Devanagari selection, copy, search, conjuncts |
 | `garbled.pdf` | Chromium `printToPDF` | the broken-`ToUnicode` detection path |
 | `scanned.pdf` | Chromium `printToPDF` | image-only documents with no text layer |
+| `links.pdf` | direct PDF writer | external URL and internal page-jump link annotations |
 
 ### Why the Devanagari fixture is built by hand
 

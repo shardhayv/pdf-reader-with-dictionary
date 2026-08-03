@@ -12,6 +12,7 @@ import * as viewer from './viewer.js';
 import * as popup from './popup.js';
 import * as lookup from './lookup.js';
 import * as selection from './selection.js';
+import * as links from './links.js';
 import * as search from './search.js';
 import * as sidebar from './sidebar.js';
 import * as prefsModal from './prefsModal.js';
@@ -85,16 +86,19 @@ async function boot() {
   applyTheme(app.prefs.theme);
   lookup.setPrefs(app.prefs);
 
+  /** Single route to the system browser, shared by popup and PDF links. */
+  async function openExternalLink(url) {
+    try {
+      const result = await window.gloss.openExternal(url);
+      if (!result?.ok) throw new Error(result?.message || 'System link handler refused the URL');
+    } catch (error) {
+      actionFailed('could not open an external link', error, 'That link could not be opened.');
+    }
+  }
+
   popup.init({
     onEntryLookup: (word) => lookup.lookupEntry(word),
-    onExternalOpen: async (url) => {
-      try {
-        const result = await window.gloss.openExternal(url);
-        if (!result?.ok) throw new Error(result?.message || 'System link handler refused the URL');
-      } catch (error) {
-        actionFailed('could not open an external link', error, 'That link could not be opened.');
-      }
-    },
+    onExternalOpen: openExternalLink,
   });
   search.init();
   sidebar.init({
@@ -119,6 +123,10 @@ async function boot() {
   });
 
   selection.attach(refs.pages(), (raw, rect) => lookup.lookupSelection(raw, rect));
+  links.attach(refs.pages(), {
+    openExternal: openExternalLink,
+    onError: (message) => toast(message),
+  });
 
   wireToolbar();
   wireViewerEvents();
@@ -194,6 +202,9 @@ async function refreshSourceChips() {
             title="${esc(d.name)} — click to ${d.enabled ? 'disable' : 'enable'}"
             aria-pressed="${d.enabled}">${esc(d.name)}</button>`);
   parts.push(`
+    <button class="chip chip--wikt${app.prefs.wiktionaryEnabled ? '' : ' chip--off'}" data-chip-wikt="1"
+            title="Wiktionary — word meanings; click to ${app.prefs.wiktionaryEnabled ? 'disable' : 'enable'}"
+            aria-pressed="${app.prefs.wiktionaryEnabled}">Wiktionary</button>
     <button class="chip chip--wiki${app.prefs.wikipediaEnabled ? '' : ' chip--off'}" data-chip-wiki="1"
             title="Wikipedia (${esc(app.prefs.wikipediaLang)}) — click to ${app.prefs.wikipediaEnabled ? 'disable' : 'enable'}"
             aria-pressed="${app.prefs.wikipediaEnabled}">Wikipedia</button>`);
@@ -208,7 +219,9 @@ $('source-chips').addEventListener('click', async (e) => {
   if (!chip) return;
   chip.disabled = true;
   try {
-    if (chip.dataset.chipWiki) {
+    if (chip.dataset.chipWikt) {
+      await applyPrefs({ wiktionaryEnabled: !app.prefs.wiktionaryEnabled });
+    } else if (chip.dataset.chipWiki) {
       await applyPrefs({ wikipediaEnabled: !app.prefs.wikipediaEnabled });
     } else {
       const result = await window.gloss.toggleDictionary(chip.dataset.chipPath);

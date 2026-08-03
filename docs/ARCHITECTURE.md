@@ -184,10 +184,63 @@ see the same selection. A 150 ms trailing coalesce collapses the burst into one
 lookup and also keeps the app quiet mid-drag.
 
 `lookup.js` gives every lookup a monotonically increasing token and discards any
-response that arrives after a newer lookup started, so a slow Wikipedia call can
+response that arrives after a newer lookup started, so a slow network call can
 never overwrite a newer local result. The popup shows the query immediately with
-a loading state, local results land first, and Wikipedia (if enabled) fills in
+a loading state, local results land first, and the online tiers fill in
 afterwards.
+
+### The three lookup tiers
+
+Local dictionaries and glossaries answer first and offline. Beyond them sit two
+independent online tiers, each with its own enable/fallback preference:
+
+* **Wiktionary** (`main/wiktionary.js`) — the online *dictionary*: senses,
+  part of speech, examples. This is the tier that answers "what does this word
+  mean", which is what a reader almost always wants.
+* **Wikipedia** (`main/wiki.js`) — the online *encyclopedia*: what a named
+  thing is. Useful for proper nouns and concepts, wrong for ordinary words.
+
+Both are requested with a single `Promise.all` rather than in sequence: they are
+independent, and a reader waiting on a word should wait one round trip, not two.
+Wiktionary is placed ahead of Wikipedia in the popup's source tabs.
+
+Only the English Wiktionary is contacted. The `/page/definition/` REST endpoint
+is implemented by that edition alone — hi, ne and mai answer `501` — and it
+returns non-English headwords grouped by language code and glossed *in English*,
+which is what a reader of a Devanagari text wants. The preferred-language
+preference therefore orders the returned sections rather than choosing a host.
+
+Definition bodies are Parsoid HTML. `main/wiktionary.js` normalizes them
+(internal `/wiki/Foo` links become `entry://Foo` cross-references the popup can
+follow, parser bookkeeping attributes and template `<style>` blocks are dropped,
+senses and sections are capped so "run" cannot deliver 72 senses to a popup),
+but it does not trust them: the renderer runs every definition through the same
+DOMPurify pass as MDX dictionary HTML.
+
+Nothing is ever handed to a search engine automatically. The popup's optional
+**Search the web** link is inert markup until clicked, and then goes out through
+the existing user-initiated `shell:openExternal` channel to the default browser.
+
+### Link annotations
+
+A page renders three independent layers: the canvas, the text layer, and — when
+the page has Link annotations — a link overlay. Each is built in its own `try`,
+so a page with broken annotations still paints and still selects.
+
+Only `Link` annotations are honoured; widgets, forms and popup annotations are
+deliberately not rendered. The overlay's anchors carry **no href**, exactly like
+sanitized dictionary links, and the whole layer is `pointer-events: none` —
+selection is Gloss's primary gesture and must never be swallowed by an invisible
+box. `renderer/js/links.js` hit-tests the overlay rectangles on click instead,
+using the live elements' bounding rects so any zoom transform is already
+accounted for.
+
+Because linked words are still words, a click on a link is held for 180 ms. If a
+second click arrives (`detail > 1`), or a selection turns out to exist, the
+lookup wins and the link is abandoned — double-clicking a linked word defines it
+rather than launching a browser. External links leave through the same
+user-initiated `shell:openExternal` channel as popup links; internal ones resolve
+through `viewer.resolveDestination`, shared with the outline sidebar.
 
 ### Per-book glossary activation
 

@@ -10,6 +10,7 @@
  *                   carries real ToUnicode maps and extracts as Unicode
  *   large.pdf       300 pages, for virtualization and search timing
  *   scanned.pdf     an image-only page (no text layer at all)
+ *   links.pdf       external URL and internal page-jump link annotations
  *
  * Latin/large PDFs are written directly (deterministic, no GUI needed).
  * The Devanagari and scanned fixtures need Chromium's printToPDF, so this
@@ -23,7 +24,14 @@ const OUT_DIR = path.join(__dirname, '..', 'test', 'fixtures');
 
 // ── Minimal PDF writer (Helvetica, WinAnsi — Latin only) ─────────────────────
 
-function buildLatinPdf(pages) {
+/**
+ * `annots` is optional and parallel to `pages`: a list per page of
+ *   { line, url }        an external link over that text line, or
+ *   { line, destPage }   a jump to another page (1-based).
+ * Destination page ids are not known until the page objects exist, so they
+ * are emitted as tokens and patched at the end, like /Parent below.
+ */
+function buildLatinPdf(pages, annots = []) {
   const objects = [];
   const add = (body) => objects.push(body) && objects.length;
 
@@ -38,11 +46,25 @@ function buildLatinPdf(pages) {
     pageIds.push(0); // placeholder, filled below
   }
 
+  // Allocated before the /Pages id is predicted below, so that prediction holds.
+  const annotIds = pages.map((_, i) => (annots[i] || []).map((a) => {
+    // Text starts at y=720 with 18pt leading; line 0 is the first line.
+    const baseline = 720 - 18 * a.line;
+    const rect = `[72 ${baseline - 4} 320 ${baseline + 12}]`;
+    const action = a.url
+      ? `/A << /S /URI /URI (${a.url.replace(/([\\()])/g, '\\$1')}) >>`
+      : `/Dest [ @@PAGE${a.destPage}@@ 0 R /XYZ null null null ]`;
+    return add(`<< /Type /Annot /Subtype /Link /Rect ${rect} /Border [0 0 0] ${action} >>`);
+  }));
+
   const pagesId = objects.length + pages.length + 1;
   for (let i = 0; i < pages.length; i++) {
+    const annotsEntry = annotIds[i].length
+      ? ` /Annots [${annotIds[i].map(id => `${id} 0 R`).join(' ')}]`
+      : '';
     pageIds[i] = add(
       `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 612 792] ` +
-      `/Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${contentIds[i]} 0 R >>`
+      `/Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${contentIds[i]} 0 R${annotsEntry} >>`
     );
   }
   const realPagesId = add(
@@ -53,6 +75,10 @@ function buildLatinPdf(pages) {
   // Re-point page parents now that the real /Pages id is known.
   for (const id of pageIds) {
     objects[id - 1] = objects[id - 1].replace(/\/Parent \d+ 0 R/, `/Parent ${realPagesId} 0 R`);
+  }
+  // …and resolve destination tokens now that every page object id is known.
+  for (let i = 0; i < objects.length; i++) {
+    objects[i] = objects[i].replace(/@@PAGE(\d+)@@/g, (_m, p) => String(pageIds[Number(p) - 1]));
   }
 
   let pdf = '%PDF-1.4\n';
@@ -87,6 +113,33 @@ const LATIN_PAGES = [
     'Another occurrence of serendipity lives here.',
     'Hyphenated-word and apostrophe: doesn\'t.',
   ],
+];
+
+/**
+ * Link-annotation fixture. Line 2 of page 1 is an external URL, line 4 jumps
+ * to page 2, and line 6 is ordinary text used to prove that a click off a
+ * link does nothing and that selection still works over a linked line.
+ */
+const LINK_PAGES = [
+  [
+    'Gloss link fixture',
+    '',
+    'External link to example dot org.',
+    '',
+    'Internal link jumping to page two.',
+    '',
+    'Plain unlinked text on this line.',
+  ],
+  [
+    'Second page of the link fixture.',
+    '',
+    'The destination of the internal link.',
+  ],
+];
+
+const LINK_ANNOTS = [
+  [{ line: 2, url: 'https://example.org/gloss-link-test' }, { line: 4, destPage: 2 }],
+  [],
 ];
 
 const DEVANAGARI_HTML = `<!DOCTYPE html>
@@ -184,6 +237,9 @@ function writePlainFixtures() {
   ]);
   fs.writeFileSync(path.join(OUT_DIR, 'large.pdf'), buildLatinPdf(largePages));
   console.log('wrote large.pdf (300 pages)');
+
+  fs.writeFileSync(path.join(OUT_DIR, 'links.pdf'), buildLatinPdf(LINK_PAGES, LINK_ANNOTS));
+  console.log('wrote links.pdf');
 }
 
 /**

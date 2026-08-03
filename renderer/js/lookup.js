@@ -4,6 +4,15 @@
  * One user action → one lookup. Every lookup takes a monotonically
  * increasing token; any await that resolves after a newer lookup started
  * is discarded, so a slow stale response can never overwrite a newer one.
+ *
+ * Tiers, in the order they appear in the popup:
+ *   1. local MDX dictionaries and per-book JSON glossaries (always, offline)
+ *   2. Wiktionary — the online dictionary: senses, part of speech
+ *   3. Wikipedia — the online encyclopedia: what a named thing *is*
+ *
+ * The two online tiers are requested together rather than in sequence: they
+ * are independent, and a reader waiting on a word should wait one round trip,
+ * not two.
  */
 
 import { lookupCandidates, collapseWhitespace, trimEdges } from './text.js';
@@ -11,14 +20,26 @@ import * as popup from './popup.js';
 
 const CACHE_LIMIT = 200;
 
-let prefs = { wikipediaEnabled: true, wikipediaAsFallback: true, wikipediaLang: 'en' };
+let prefs = {
+  wiktionaryEnabled: true,
+  wiktionaryAsFallback: true,
+  wikipediaEnabled: true,
+  wikipediaAsFallback: true,
+  wikipediaLang: 'en',
+  webSearchLinkEnabled: true,
+};
 let requestToken = 0;
 let dictVersion = 0;
-const cache = new Map(); // key -> {sources, wikiState}
+const cache = new Map(); // key -> {sources, wikiState, wiktState}
+
+const PREF_KEYS = [
+  'wiktionaryEnabled', 'wiktionaryAsFallback',
+  'wikipediaEnabled', 'wikipediaAsFallback', 'wikipediaLang',
+  'webSearchLinkEnabled',
+];
 
 export function setPrefs(next) {
-  const relevant = ['wikipediaEnabled', 'wikipediaAsFallback', 'wikipediaLang'];
-  if (relevant.some(k => prefs[k] !== next[k])) cache.clear();
+  if (PREF_KEYS.some(k => prefs[k] !== next[k])) cache.clear();
   prefs = { ...prefs, ...next };
 }
 
@@ -36,7 +57,7 @@ export function clearCache() {
 }
 
 function cacheKey(primary) {
-  return `${dictVersion}|${prefs.wikipediaLang}|${prefs.wikipediaEnabled}|${prefs.wikipediaAsFallback}|${primary}`;
+  return [dictVersion, ...PREF_KEYS.map(k => prefs[k]), primary].join('|');
 }
 
 function remember(key, value) {
@@ -44,9 +65,14 @@ function remember(key, value) {
   cache.set(key, value);
 }
 
+/** Offline/error results are not cached — a retry may succeed later. */
+function cacheable(state) {
+  return state === 'hit' || state === 'miss' || state === 'skipped';
+}
+
 /**
  * Look up a raw selection string. The popup shows the query immediately
- * with a loading state; local results land first, Wikipedia after.
+ * with a loading state; local results land first, online sources after.
  */
 export async function lookupSelection(rawText, anchorRect) {
   const displayWord = trimEdges(collapseWhitespace(rawText)) || collapseWhitespace(rawText);
@@ -59,12 +85,16 @@ export async function lookupSelection(rawText, anchorRect) {
   const cached = cache.get(key);
   if (cached) {
     const payload = { word: displayWord, phase: 'done', ...structuredClone(cached) };
+    payload.webSearch = prefs.webSearchLinkEnabled;
     popup.render(payload, anchorRect);
     popup.announceResult(payload);
     return;
   }
 
-  popup.render({ word: displayWord, phase: 'loading', sources: [], wikiState: 'skipped' }, anchorRect);
+  popup.render({
+    word: displayWord, phase: 'loading', sources: [],
+    wikiState: 'skipped', wiktState: 'skipped', webSearch: prefs.webSearchLinkEnabled,
+  }, anchorRect);
 
   let local = [];
   let localErrors = [];
@@ -89,38 +119,63 @@ export async function lookupSelection(rawText, anchorRect) {
     language: r.language || '',
   }));
 
-  const wantWiki = prefs.wikipediaEnabled && (!prefs.wikipediaAsFallback || sources.length === 0);
-  let wikiState = wantWiki ? 'loading' : 'skipped';
+  const noLocalMatch = sources.length === 0;
+  const wantWikt = prefs.wiktionaryEnabled && (!prefs.wiktionaryAsFallback || noLocalMatch);
+  const wantWiki = prefs.wikipediaEnabled && (!prefs.wikipediaAsFallback || noLocalMatch);
 
-  const payload = { word: displayWord, phase: 'done', sources, wikiState, localErrors };
+  const payload = {
+    word: displayWord, phase: 'done', sources, localErrors,
+    wiktState: wantWikt ? 'loading' : 'skipped',
+    wikiState: wantWiki ? 'loading' : 'skipped',
+    webSearch: prefs.webSearchLinkEnabled,
+  };
   popup.render(payload, anchorRect);
 
-  if (!wantWiki) {
+  if (!wantWikt && !wantWiki) {
     popup.announceResult(payload);
-    if (localErrors.length === 0) remember(key, { sources, wikiState: 'skipped', localErrors: [] });
+    if (localErrors.length === 0) {
+      remember(key, { sources, wikiState: 'skipped', wiktState: 'skipped', localErrors: [] });
+    }
     return;
   }
 
-  let wiki;
-  try {
-    wiki = await window.gloss.lookupWikipedia(prefs.wikipediaLang, displayWord);
-  } catch {
-    wiki = { status: 'error' };
-  }
+  // Both online tiers are independent — one round trip, not two.
+  const [wikt, wiki] = await Promise.all([
+    wantWikt
+      ? window.gloss.lookupWiktionary(prefs.wikipediaLang, displayWord).catch(() => ({ status: 'error' }))
+      : Promise.resolve({ status: 'skipped' }),
+    wantWiki
+      ? window.gloss.lookupWikipedia(prefs.wikipediaLang, displayWord).catch(() => ({ status: 'error' }))
+      : Promise.resolve({ status: 'skipped' }),
+  ]);
   if (token !== requestToken) return; // superseded
 
-  wikiState = wiki.status;
-  const finalSources = wiki.status === 'hit'
-    ? [...sources, { kind: 'wiki', title: wiki.title, extract: wiki.extract, url: wiki.url, lang: wiki.lang }]
-    : sources;
+  const wiktState = wikt.status;
+  const wikiState = wiki.status;
 
-  const finalPayload = { word: displayWord, phase: 'done', sources: finalSources, wikiState, localErrors };
+  // Wiktionary sits ahead of Wikipedia: for a word met while reading, the
+  // dictionary sense is the answer and the encyclopedia article is context.
+  const finalSources = [...sources];
+  if (wiktState === 'hit') {
+    finalSources.push({
+      kind: 'wiktionary', word: wikt.word, sections: wikt.sections, url: wikt.url,
+    });
+  }
+  if (wikiState === 'hit') {
+    finalSources.push({
+      kind: 'wiki', title: wiki.title, extract: wiki.extract, url: wiki.url, lang: wiki.lang,
+    });
+  }
+
+  const finalPayload = {
+    word: displayWord, phase: 'done', sources: finalSources,
+    wikiState, wiktState, localErrors, webSearch: prefs.webSearchLinkEnabled,
+  };
   popup.render(finalPayload);
   popup.announceResult(finalPayload);
 
-  // Offline/error results are not cached — retry may succeed later.
-  if (localErrors.length === 0 && (wikiState === 'hit' || wikiState === 'miss' || wikiState === 'skipped')) {
-    remember(key, { sources: finalSources, wikiState, localErrors: [] });
+  if (localErrors.length === 0 && cacheable(wikiState) && cacheable(wiktState)) {
+    remember(key, { sources: finalSources, wikiState, wiktState, localErrors: [] });
   }
 }
 

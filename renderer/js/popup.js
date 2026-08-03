@@ -202,8 +202,14 @@ function position(anchorRect) {
 /**
  * payload = {
  *   word, phase: 'loading' | 'done',
- *   sources: [{kind:'mdx', dictName, keyText, html} | {kind:'wiki', title, extract, url, lang}],
+ *   sources: [
+ *     {kind:'local', dictName, keyText, html} |
+ *     {kind:'wiktionary', word, sections, url} |
+ *     {kind:'wiki', title, extract, url, lang}
+ *   ],
+ *   wiktState: 'loading'|'hit'|'miss'|'offline'|'error'|'skipped',
  *   wikiState: 'loading'|'hit'|'miss'|'offline'|'error'|'skipped',
+ *   webSearch: boolean,   // show the "Search the web" escape hatch
  * }
  */
 export function render(payload, anchorRect) {
@@ -235,9 +241,63 @@ function renderAll() {
 }
 
 function tabLabel(source) {
-  return source.kind === 'wiki'
-    ? `Wikipedia (${esc(source.lang)})`
-    : esc(source.dictName || 'Dictionary');
+  if (source.kind === 'wiki') return `Wikipedia (${esc(source.lang)})`;
+  if (source.kind === 'wiktionary') return 'Wiktionary';
+  return esc(source.dictName || 'Dictionary');
+}
+
+/** Google's "define" query is the one users reach for; keep that intent. */
+function webSearchUrl(word) {
+  return `https://www.google.com/search?q=${encodeURIComponent(`define ${word}`)}`;
+}
+
+/**
+ * Wiktionary comes back as language sections, each with a part of speech and
+ * numbered senses. Definition bodies are wiki HTML and go through the same
+ * sanitizer as any dictionary.
+ */
+function renderWiktionary(source) {
+  const sections = Array.isArray(source.sections) ? source.sections : [];
+  const body = sections.map((section) => {
+    const langAttr = section.lang ? ` lang="${esc(section.lang)}"` : '';
+    const heading = [section.language, section.partOfSpeech].filter(Boolean);
+    const senses = (section.senses || []).map((sense) => {
+      const examples = (sense.examples || [])
+        .map(ex => `<blockquote class="wikt-example">${sanitizeDefinition(ex)}</blockquote>`)
+        .join('');
+      return `<li class="wikt-sense"><div class="wikt-def">${sanitizeDefinition(sense.definition)}</div>${examples}</li>`;
+    }).join('');
+    return `
+      <section class="wikt-section"${langAttr}>
+        ${heading.length ? `<h4 class="wikt-heading">
+          ${section.language ? `<span class="wikt-lang">${esc(section.language)}</span>` : ''}
+          ${section.partOfSpeech ? `<span class="wikt-pos">${esc(section.partOfSpeech)}</span>` : ''}
+        </h4>` : ''}
+        <ol class="wikt-senses">${senses}</ol>
+      </section>`;
+  }).join('');
+
+  return `
+    <span class="source-badge source-badge--wikt">${icons.book}Wiktionary</span>
+    <div class="wikt-body">${body}</div>
+    <a class="def-link def-link--external" role="link" tabindex="0"
+       data-external="${esc(source.url)}">Read more on Wiktionary ${icons.external}</a>`;
+}
+
+/** One line covering both online tiers, used when nothing local matched. */
+function onlineNote(wiktState, wikiState) {
+  const states = [wiktState, wikiState];
+  if (states.includes('loading')) {
+    const which = wiktState === 'loading' ? 'Wiktionary' : 'Wikipedia';
+    return `<div class="popup-state">${icons.spinner}<span>Checking ${which}…</span></div>`;
+  }
+  if (states.includes('offline')) {
+    return `<div class="popup-state popup-state--muted">${icons.offline}<span>No local match — and online sources are unreachable offline.</span></div>`;
+  }
+  if (states.includes('error')) {
+    return `<div class="popup-state popup-state--muted"><span>No local match — the online lookup failed.</span></div>`;
+  }
+  return `<div class="popup-state popup-state--muted"><span>No definition found.</span></div>`;
 }
 
 function renderTabs() {
@@ -251,7 +311,7 @@ function renderTabs() {
 }
 
 function renderBody() {
-  const { phase, sources, wikiState, localErrors = [] } = view.payload;
+  const { phase, sources, wikiState, wiktState = 'skipped', localErrors = [] } = view.payload;
   const parts = [];
   const localFailure = localErrors.length > 0
     ? `${localErrors.slice(0, 2).join(', ')} ${localErrors.length === 1 ? 'is' : 'are'} unavailable. Reload ${localErrors.length === 1 ? 'it' : 'them'} in Preferences.`
@@ -260,18 +320,12 @@ function renderBody() {
   if (phase === 'loading') {
     parts.push(`<div class="popup-state">${icons.spinner}<span>Looking up…</span></div>`);
   } else if (sources.length === 0) {
-    if (wikiState === 'loading') {
-      parts.push(`<div class="popup-state">${icons.spinner}<span>Checking Wikipedia…</span></div>`);
-    } else if (wikiState === 'offline') {
-      parts.push(`<div class="popup-state popup-state--muted">${icons.offline}<span>No local match — and Wikipedia is unreachable offline.</span></div>`);
-    } else if (wikiState === 'error') {
-      parts.push(`<div class="popup-state popup-state--muted"><span>No local match — Wikipedia lookup failed.</span></div>`);
-    } else {
-      parts.push(`<div class="popup-state popup-state--muted"><span>No definition found.</span></div>`);
-    }
+    parts.push(onlineNote(wiktState, wikiState));
   } else {
     const source = sources[Math.min(view.activeTab, sources.length - 1)];
-    if (source.kind === 'wiki') {
+    if (source.kind === 'wiktionary') {
+      parts.push(renderWiktionary(source));
+    } else if (source.kind === 'wiki') {
       parts.push(`
         <span class="source-badge source-badge--wiki">${icons.globe}Wikipedia</span>
         <p class="popup-extract">${esc(source.extract)}</p>
@@ -296,13 +350,25 @@ function renderBody() {
         parts.push(`<div class="popup-entry-meta">${esc(details.join(' · '))}</div>`);
       }
     }
-    if (sources.length >= 1 && wikiState === 'loading') {
-      parts.push(`<div class="popup-state popup-state--footer">${icons.spinner}<span>Checking Wikipedia…</span></div>`);
+    if (wiktState === 'loading' || wikiState === 'loading') {
+      const which = wiktState === 'loading' ? 'Wiktionary' : 'Wikipedia';
+      parts.push(`<div class="popup-state popup-state--footer">${icons.spinner}<span>Checking ${which}…</span></div>`);
     }
   }
 
   if (localFailure) {
     parts.push(`<div class="popup-state popup-state--footer popup-state--warning" role="status"><span>${esc(localFailure)}</span></div>`);
+  }
+
+  // Last resort, and the only place Gloss hands a word to a search engine:
+  // an explicit, user-initiated link that opens in the default browser.
+  if (view.payload.webSearch && phase !== 'loading') {
+    parts.push(`
+      <div class="popup-websearch">
+        <a class="def-link def-link--external" role="link" tabindex="0"
+           data-external="${esc(webSearchUrl(view.payload.word))}"
+           title="Opens in your browser">${icons.search}Search the web</a>
+      </div>`);
   }
 
   el.body.innerHTML = parts.join('');
