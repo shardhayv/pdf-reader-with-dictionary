@@ -28,8 +28,8 @@ WordNet (see file 10 below).
 
 10  General English
 -------------------------------------------------------------------------
-Derived from Princeton WordNet, as distributed in the NLTK "wordnet" corpus
-package (https://www.nltk.org/nltk_data/).
+Derived from Princeton WordNet 3.0, as distributed in the NLTK "wordnet"
+corpus package (https://www.nltk.org/nltk_data/).
 
   WordNet Release 3.0. This software and database is being provided to you,
   the LICENSEE, by Princeton University under the following license. By

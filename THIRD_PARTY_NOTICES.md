@@ -32,7 +32,7 @@ Gloss's AGPL-3.0 licence covers the application, not this data.
 | Files | Built from | Terms |
 |---|---|---|
 | `01`–`09` subject dictionaries | English Wikipedia "Glossary of …" and list articles, plus subject-filtered WordNet entries | Wikipedia text: **CC BY-SA 4.0**, © its contributors (shortened and reformatted; these files are offered under CC BY-SA 4.0 in turn) |
-| `10` General English | Princeton WordNet, via the NLTK `wordnet` corpus package | **WordNet licence** — © Princeton University; full text in `build/DICTIONARY-NOTICES.txt` |
+| `10` General English | Princeton WordNet 3.0, via the NLTK `wordnet` corpus package | **WordNet licence** — © Princeton University; full text in `build/DICTIONARY-NOTICES.txt` |
 | `11` Devanagari — Hindi & Sanskrit | [`vkadal/sanskrit-english-dictionary`](https://github.com/vkadal/sanskrit-english-dictionary) (Cologne lexicon editions of Apte, Macdonell, Monier-Williams) and [`bdrillard/english-hindi-dictionary`](https://github.com/bdrillard/english-hindi-dictionary) | Sanskrit: **MIT**. Hindi: **no licence is published** in the source repository — see the note below |
 | `12` Devanagari — Nepali Shabdakosh | [`Shubhamnpk/yoshabdakosh`](https://github.com/Shubhamnpk/yoshabdakosh) | **MIT** |
 

@@ -431,3 +431,59 @@ test('narrow windows float the sidebar and stack the preferences layout', async 
     await app.close();
   }
 });
+
+test('the definition popup never covers the word it explains, even in a short window', async () => {
+  const { app, page } = await launchGloss({ open: 'large.pdf' });
+  try {
+    await waitForDocument(page);
+    await page.evaluate(() => window.gloss.setPrefs({ wiktionaryEnabled: false, wikipediaEnabled: false }));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gloss-tall-'));
+    const file = path.join(dir, 'tall.json');
+    fs.writeFileSync(file, JSON.stringify({
+      format: 'gloss-glossary', version: 1, scope: 'global', name: 'Tall definitions',
+      entries: [{
+        word: 'quick',
+        definition: `<ol>${Array.from({ length: 30 }, (_, i) => `<li>sense number ${i + 1} of a long entry</li>`).join('')}</ol>`,
+      }],
+    }));
+    await app.evaluate(({ dialog }, f) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [f] });
+    }, file);
+    await page.evaluate(() => window.gloss.addDictionaries());
+
+    const overlap = async (anchor) => page.evaluate(async (rect) => {
+      const lookup = await import('./js/lookup.js');
+      const popupModule = await import('./js/popup.js');
+      popupModule.closePopup({ force: true });
+      lookup.setPrefs(await window.gloss.getPrefs());
+      lookup.invalidateDictionaries();
+      await lookup.lookupSelection('quick', rect);
+      await new Promise(resolve => setTimeout(resolve, 150));
+      const p = document.getElementById('popup').getBoundingClientRect();
+      const covered = !(p.right <= rect.left || p.left >= rect.right || p.bottom <= rect.top || p.top >= rect.bottom);
+      return {
+        covered,
+        inside: p.left >= 0 && p.top >= 0 && p.right <= innerWidth && p.bottom <= innerHeight,
+        scrolls: document.getElementById('popup-body').scrollHeight > document.getElementById('popup-body').clientHeight,
+      };
+    }, anchor);
+
+    // Wide but short: the popup goes beside the word.
+    await resizeWindow(app, page, 1000, 420);
+    const beside = await overlap({ top: 200, bottom: 222, left: 180, right: 240 });
+    expect(beside).toEqual({ covered: false, inside: true, scrolls: true });
+
+    // Narrow and short: no room beside, so it takes the roomier side, capped.
+    await resizeWindow(app, page, 440, 420);
+    const capped = await overlap({ top: 250, bottom: 272, left: 150, right: 210 });
+    expect(capped).toEqual({ covered: false, inside: true, scrolls: true });
+
+    // Plenty of room: straight below, as always.
+    await resizeWindow(app, page, 1000, 900);
+    const roomy = await overlap({ top: 120, bottom: 142, left: 180, right: 240 });
+    expect(roomy.covered).toBe(false);
+    expect(roomy.inside).toBe(true);
+  } finally {
+    await app.close();
+  }
+});

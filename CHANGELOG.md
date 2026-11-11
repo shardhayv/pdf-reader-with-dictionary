@@ -36,6 +36,11 @@ running app before it was fixed, and each has a regression test.
   switched off were switched back on at every start.
 - **Saved words** recorded `&amp;` in the source name and prefixed the
   definition with the upper-cased source badge.
+- **The definition popup covered the word it explained** in a short window.
+  It now goes beside the word, or takes the roomier side with its height
+  capped, and never overlaps the selection.
+- The general English dictionary was labelled "WordNet 3.1"; the data it is
+  built from is WordNet 3.0. The label, script and notices now say so.
 - The page number froze when zoomed far into a very large page.
 - A saved dictionary whose file had gone missing was dropped without a word;
   it is now reported.

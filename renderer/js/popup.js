@@ -305,21 +305,58 @@ function goBack() {
 const GAP = 10;
 const MARGIN = 12;
 
+/** Shortest the popup is ever squeezed to before it is allowed to overlap. */
+const MIN_HEIGHT = 150;
+
+/**
+ * Place the popup next to the selection without covering it.
+ *
+ * Below the word if the whole popup fits there, otherwise above. In a short
+ * window neither may fit — and simply clamping to the top edge, as before,
+ * dropped the popup squarely over the line being read. So the fallbacks are:
+ * beside the word if there is room to its right or left, and failing that the
+ * roomier of above/below with the popup's height capped to the space there
+ * (its body scrolls).
+ */
 function position(anchorRect) {
   if (view.pinned) return; // pinned popups stay put
   if (anchorRect) view.anchorRect = anchorRect;
   const rect = view.anchorRect;
   if (!rect) return;
+
+  el.root.style.maxHeight = ''; // measure at the stylesheet's natural cap
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
   const pw = el.root.offsetWidth || 360;
-  const ph = el.root.offsetHeight || 200;
-  let top = rect.bottom + GAP;                 // below the selection…
-  if (top + ph > window.innerHeight - MARGIN) {
-    top = rect.top - ph - GAP;                 // …or above, never covering it
-  }
-  if (top < MARGIN) top = MARGIN;
+  let ph = el.root.offsetHeight || 200;
+
+  const below = vh - MARGIN - (rect.bottom + GAP);
+  const above = rect.top - GAP - MARGIN;
+  let top;
   let left = rect.left;
-  if (left + pw > window.innerWidth - MARGIN) left = window.innerWidth - pw - MARGIN;
-  if (left < MARGIN) left = MARGIN;
+
+  if (ph <= below) {
+    top = rect.bottom + GAP;
+  } else if (ph <= above) {
+    top = rect.top - ph - GAP;
+  } else {
+    const rightRoom = vw - MARGIN - (rect.right + GAP);
+    const leftRoom = rect.left - GAP - MARGIN;
+    if (pw <= rightRoom || pw <= leftRoom) {
+      left = pw <= rightRoom ? rect.right + GAP : rect.left - GAP - pw;
+      top = rect.top;
+    } else {
+      const room = Math.max(below, above);
+      if (room >= MIN_HEIGHT) {
+        el.root.style.maxHeight = `${Math.floor(room)}px`;
+        ph = Math.min(ph, Math.floor(room));
+      }
+      top = below >= above ? rect.bottom + GAP : rect.top - ph - GAP;
+    }
+  }
+
+  top = Math.max(MARGIN, Math.min(top, vh - ph - MARGIN));
+  left = Math.max(MARGIN, Math.min(left, vw - pw - MARGIN));
   el.root.style.top = `${Math.round(top)}px`;
   el.root.style.left = `${Math.round(left)}px`;
 }

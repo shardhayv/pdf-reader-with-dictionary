@@ -165,8 +165,10 @@ copy against Electron's real clipboard and the exact text a saved word keeps;
 Space/arrow keys acting on the focused control and nothing reaching the
 document through an open dialog; a zoomed page being fully scrollable; zoom
 and resize holding the reader's place 200 pages in; the reading position
-surviving a reopen at a different window size; and printing producing one
-sheet per page at the document's page size (verified through `printToPDF`).
+surviving a reopen at a different window size; printing producing one sheet
+per page at the document's page size (verified through `printToPDF`); and the
+definition popup never overlapping the selected word in short or narrow
+windows.
 
 **`test/e2e/integration.spec.js`** — dialog/drop/recents paths, keyboard and
 reduced-motion states, password UI, plus recovery from a failed file portal, a

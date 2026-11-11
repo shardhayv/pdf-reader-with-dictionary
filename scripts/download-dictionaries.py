@@ -2,7 +2,7 @@
 """
 scripts/download-dictionaries.py — Download and build category-wise global
 dictionaries for Gloss from peer-edited Wikipedia Academic Glossaries and
-Princeton WordNet 3.1 domain synsets.
+Princeton WordNet 3.0 domain synsets.
 
 Writes 10 category JSON dictionaries into ~/.local/share/gloss/dictionaries/
 (symlinked at ~/Dictionaries) and registers them in ~/.config/gloss/preferences.json.
@@ -542,7 +542,7 @@ def parse_wiki_glossary(html):
 def load_wordnet(cache_dir):
     zip_path = os.path.join(cache_dir, "wordnet.zip")
     if not os.path.exists(zip_path):
-        print("Downloading Princeton WordNet 3.1...")
+        print("Downloading Princeton WordNet 3.0...")
         urllib.request.urlretrieve(
             "https://raw.githubusercontent.com/nltk/nltk_data/gh-pages/packages/corpora/wordnet.zip",
             zip_path,
@@ -851,7 +851,7 @@ def main():
                     page_html[p] = fut.result()
 
             synsets, inflections = load_wordnet(cache_dir)
-            print(f"Loaded {len(synsets):,} WordNet 3.1 synsets.")
+            print(f"Loaded {len(synsets):,} WordNet 3.0 synsets.")
 
             for cat in CATEGORIES:
                 entries_by_word = {}
@@ -941,7 +941,7 @@ def main():
                 )
                 output_paths.append(out_path)
 
-            print("Building General English Master Dictionary (WordNet 3.1)...")
+            print("Building General English Master Dictionary (WordNet 3.0)...")
             general_senses = defaultdict(list)
             general_example = {}
             for ss_key, ss in synsets.items():
@@ -974,7 +974,7 @@ def main():
                 "format": "gloss-glossary",
                 "version": 1,
                 "scope": "global",
-                "name": "General English (WordNet 3.1)",
+                "name": "General English (WordNet 3.0)",
                 "language": "en",
                 "entries": general_entries[:120000],
             }
@@ -982,7 +982,7 @@ def main():
                 json.dump(gen_payload, f, ensure_ascii=False, separators=(",", ":"))
             size_mb = os.path.getsize(gen_path) / (1024 * 1024)
             print(
-                f"  ✓ {'General English (WordNet 3.1)':46s}: {len(gen_payload['entries']):6,d} entries [{size_mb:.2f} MB]"
+                f"  ✓ {'General English (WordNet 3.0)':46s}: {len(gen_payload['entries']):6,d} entries [{size_mb:.2f} MB]"
             )
             output_paths.append(gen_path)
 
