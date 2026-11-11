@@ -19,7 +19,7 @@ const MAX_WORD_LENGTH = 200;
 const MAX_DEFINITION_LENGTH = 64 * 1024;
 const MAX_EXAMPLE_LENGTH = 2000;
 const MAX_OCCURRENCES = 8;
-const MAX_ALIASES = 24;
+const MAX_ALIASES = 48;
 
 function clippedString(value, max, { trim = true } = {}) {
   if (typeof value !== 'string') return '';
@@ -117,6 +117,10 @@ class Glossary {
     this.index = new Map();
     let usable = 0;
     let valid = 0;
+    // Aliases are indexed after every headword, so an alias can never take
+    // the place of a real entry: "saw" listed as a form of "see" must not
+    // hide the entry for the tool.
+    const aliasKeys = [];
 
     for (const raw of entries.slice(0, MAX_ENTRIES)) {
       if (!raw || typeof raw !== 'object') continue;
@@ -149,19 +153,21 @@ class Glossary {
         count: Number.isInteger(raw.count) && raw.count > 0 ? raw.count : null,
       };
 
-      const keys = [word];
+      if (!this.index.has(word)) this.index.set(word, entry);
+      const nfcWord = word.normalize('NFC');
+      if (!this.index.has(nfcWord)) this.index.set(nfcWord, entry);
       if (Array.isArray(raw.aliases)) {
         for (const alias of raw.aliases.slice(0, MAX_ALIASES)) {
           const text = typeof alias === 'string' ? alias.trim() : '';
-          if (text && text.length <= MAX_WORD_LENGTH) keys.push(text);
+          if (text && text.length <= MAX_WORD_LENGTH) aliasKeys.push([text, entry]);
         }
       }
-      for (const key of keys) {
-        if (!this.index.has(key)) this.index.set(key, entry);
-        const nfc = key.normalize('NFC');
-        if (!this.index.has(nfc)) this.index.set(nfc, entry);
-      }
       usable++;
+    }
+    for (const [key, entry] of aliasKeys) {
+      if (!this.index.has(key)) this.index.set(key, entry);
+      const nfc = key.normalize('NFC');
+      if (!this.index.has(nfc)) this.index.set(nfc, entry);
     }
 
     if (valid === 0) throw new Error('No valid glossary headwords');

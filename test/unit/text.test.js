@@ -96,9 +96,96 @@ test('candidate ladder starts with the exact selection', () => {
 test('proper-case Latin entries stay discoverable', () => {
   // Exact form first so a dictionary keyed on "Paris"/"NASA" hits before
   // any folded variant.
-  assert.deepEqual(lookupCandidates('Paris'), ['Paris', 'paris', 'PARIS']);
+  // Base-form guesses follow, and only ever after every exact/case form.
+  assert.deepEqual(lookupCandidates('Paris').slice(0, 3), ['Paris', 'paris', 'PARIS']);
   assert.deepEqual(lookupCandidates('NASA'), ['NASA', 'nasa', 'Nasa']);
-  assert.deepEqual(lookupCandidates('(Paris)'), ['(Paris)', 'Paris', 'paris', 'PARIS']);
+  assert.deepEqual(lookupCandidates('(Paris)').slice(0, 4), ['(Paris)', 'Paris', 'paris', 'PARIS']);
+});
+
+// ── Base forms ────────────────────────────────────────────────────────────────
+
+/** The base form a reader expects, and that it comes after the exact forms. */
+function reaches(selection, base) {
+  const ladder = lookupCandidates(selection);
+  const at = ladder.indexOf(base);
+  assert.ok(at > 0, `${selection} should offer ${base}; got ${ladder.join(' | ')}`);
+  assert.equal(ladder[0], selection);
+  return at;
+}
+
+test('inflected English words reach their dictionary form', () => {
+  for (const [word, base] of [
+    ['transactions', 'transaction'], ['processes', 'process'], ['policies', 'policy'],
+    ['boxes', 'box'], ['knives', 'knife'], ['stored', 'store'], ['accepted', 'accept'],
+    ['verified', 'verify'], ['stopped', 'stop'], ['using', 'use'], ['processing', 'process'],
+    ['running', 'run'], ['larger', 'large'], ['fastest', 'fast'], ['easier', 'easy'],
+    ['securely', 'secure'], ['digitally', 'digital'], ['reliably', 'reliable'], ['awareness', 'aware'],
+  ]) reaches(word, base);
+});
+
+test('the conservative base form is tried before the aggressive one', () => {
+  // "uses" is "use" + s, not "us" + es; "using" is "use", not "us".
+  assert.ok(reaches('uses', 'use') < lookupCandidates('uses').indexOf('us'));
+  assert.ok(reaches('using', 'use') < lookupCandidates('using').indexOf('us'));
+  // A capitalised, sentence-initial inflection still gets there.
+  reaches('Transactions', 'transaction');
+});
+
+test('possessives drop the apostrophe and keep a name\'s capitals', () => {
+  reaches("RBB's", 'RBB');
+  reaches('Nepal’s', 'Nepal');
+  reaches("bank's", 'bank');
+  reaches("customers'", 'customer');
+});
+
+test('hyphenated compounds are tried joined, spaced, and by their parts', () => {
+  const ladder = lookupCandidates('real-time');
+  assert.equal(ladder[0], 'real-time');
+  for (const form of ['real time', 'realtime', 'time', 'real']) assert.ok(ladder.includes(form), form);
+  reaches('state-owned', 'own');
+});
+
+test('a base form is never proposed for a phrase or a two-letter word', () => {
+  assert.deepEqual(lookupCandidates('is'), ['is', 'Is', 'IS']);
+  assert.deepEqual(lookupCandidates('credit cards'), ['credit cards']);
+});
+
+test('Nepali postpositions and plural markers come off the word', () => {
+  reaches('नेपालको', 'नेपाल');
+  reaches('बैंकहरू', 'बैंक');
+  reaches('देशहरूको', 'देश');
+  reaches('ग्राहकलाई', 'ग्राहक');
+  reaches('टाउकाको', 'टाउको');       // oblique -ा back to -ो
+  reaches('सबभन्दा', 'सब');
+});
+
+test('Nepali verb forms reach the -नु dictionary form', () => {
+  for (const [form, verb] of [
+    ['गरिएको', 'गर्नु'], ['राख्ने', 'राख्नु'], ['बसेर', 'बस्नु'], ['खाएर', 'खानु'],
+    ['बनाइएको', 'बनाउनु'], ['हराएको', 'हराउनु'], ['हुँदा', 'हुनु'], ['गर्छ', 'गर्नु'],
+    ['गर्नुपर्ने', 'गर्नु'], ['नगर्ने', 'गर्नु'], ['राख्न', 'राख्नु'],
+  ]) reaches(form, verb);
+});
+
+test('Hindi plural and oblique endings come off the word', () => {
+  reaches('लड़कियों', 'लड़की');
+  reaches('किताबें', 'किताब');
+  reaches('घरों', 'घर');
+  reaches('लड़कों', 'लड़का');
+});
+
+test('a Devanagari stem is a whole word, never half a conjunct', () => {
+  for (const word of ['पक्को', 'नेपालको', 'गरिएको', 'विद्यालयहरूमा']) {
+    for (const candidate of lookupCandidates(word)) {
+      assert.ok(!candidate.endsWith('\u094D'), `${word} → ${candidate} ends in a virama`);
+      assert.ok([...candidate].length >= 2);
+    }
+  }
+});
+
+test('the ladder is bounded however long the word', () => {
+  assert.ok(lookupCandidates('counter-revolutionaries-in-waiting').length <= 32);
+  assert.ok(lookupCandidates('विद्यालयहरूकोलागिभन्दापनि').length <= 32);
 });
 
 test('accented Latin survives every rung of the ladder', () => {
@@ -111,7 +198,8 @@ test('accented Latin survives every rung of the ladder', () => {
 
 test('Devanagari never gets Latin case variants', () => {
   const c = lookupCandidates('काठमाडौँ।');
-  assert.deepEqual(c, ['काठमाडौँ।', 'काठमाडौँ']);
+  assert.deepEqual(c.slice(0, 2), ['काठमाडौँ।', 'काठमाडौँ']);
+  assert.ok(c.every(candidate => !/[A-Za-z]/.test(candidate)));
   for (const candidate of c) {
     assert.equal(candidate, candidate.normalize('NFC').length === candidate.length
       ? candidate : candidate);

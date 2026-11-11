@@ -25,7 +25,7 @@ try { ({ app } = require('electron')); } catch { app = null; }
 const store = require('./store');
 const { Glossary, isGlossaryPath } = require('./glossary');
 
-const MAX_CANDIDATES = 10;
+const MAX_CANDIDATES = 32;   // keep in step with renderer/js/text.js
 const MAX_CANDIDATE_LENGTH = 120;
 const MAX_DEFINITION_BYTES = 512 * 1024;
 
@@ -171,9 +171,12 @@ function getBundledDictionaryPaths(dirs = defaultBundledDirs()) {
   for (const dir of dirs) {
     try {
       if (!fs.statSync(dir).isDirectory()) continue;
+      // General English leads: a reader who selects "line" wants the everyday
+      // meaning before the one from a subject glossary.
+      const rank = (name) => (/general-english/i.test(name) ? 0 : 1);
       const files = fs.readdirSync(dir)
         .filter(f => /\.json$/i.test(f))
-        .sort()
+        .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
         .map(f => path.join(dir, f));
       if (files.length > 0) return files;
     } catch { /* folder absent in this build — try the next one */ }
@@ -210,7 +213,13 @@ async function restoreFromPrefs({ bundledDirs } = {}) {
 
   for (const savedPath of saved.order) {
     const name = path.basename(savedPath);
-    const target = !fs.existsSync(savedPath) && bundledByName.has(name)
+    const missing = !fs.existsSync(savedPath);
+    // A dictionary that came with an earlier build and is no longer shipped
+    // (the package's contents changed) is simply gone. It was never the
+    // reader's file, so its absence is not an error to report.
+    if (missing && seen.has(name) && !bundledByName.has(name) &&
+        path.basename(path.dirname(savedPath)).toLowerCase() === 'dictionaries') continue;
+    const target = missing && bundledByName.has(name)
       ? bundledByName.get(name)
       : savedPath;
     if (targets.includes(target)) continue;

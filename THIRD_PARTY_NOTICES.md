@@ -22,33 +22,49 @@ application. Gloss does not modify or claim ownership of these dependencies.
 
 ## Dictionary content
 
-The source repository contains no dictionary data. The **release packages**
-(`.deb`, Windows installer, portable `.exe`) do: twelve offline JSON
-dictionaries, about 361,000 entries, installed under `resources/dictionaries`
-together with a `NOTICES.txt` carrying the notices below. They are built by
-`scripts/download-dictionaries.py` and are separate works from the program —
-Gloss's AGPL-3.0 licence covers the application, not this data.
+The source repository contains no third-party dictionary data. The **release
+packages** (`.deb`, Windows installer, portable `.exe`) include four offline
+JSON dictionaries, about 315,000 entries, installed under
+`resources/dictionaries` with a `NOTICES.txt` carrying the notices below.
+They are separate works from the program — Gloss's AGPL-3.0 licence covers
+the application, not this data.
 
-| Files | Built from | Terms |
+| File | Built from | Terms |
 |---|---|---|
-| `01`–`09` subject dictionaries | English Wikipedia "Glossary of …" and list articles, plus subject-filtered WordNet entries | Wikipedia text: **CC BY-SA 4.0**, © its contributors (shortened and reformatted; these files are offered under CC BY-SA 4.0 in turn) |
-| `10` General English | Princeton WordNet 3.0, via the NLTK `wordnet` corpus package | **WordNet licence** — © Princeton University; full text in `build/DICTIONARY-NOTICES.txt` |
-| `11` Devanagari — Hindi & Sanskrit | [`vkadal/sanskrit-english-dictionary`](https://github.com/vkadal/sanskrit-english-dictionary) (Cologne lexicon editions of Apte, Macdonell, Monier-Williams) and [`bdrillard/english-hindi-dictionary`](https://github.com/bdrillard/english-hindi-dictionary) | Sanskrit: **MIT**. Hindi: **no licence is published** in the source repository — see the note below |
+| `10` General English | Princeton WordNet 3.0 (via the NLTK `wordnet` corpus package), plus everyday words and computing terms written for Gloss (`scripts/data/`) | **WordNet licence** — © Princeton University; full text in `build/DICTIONARY-NOTICES.txt`. Gloss-written entries: the repository's licence |
+| `11` Devanagari — Sanskrit | [`vkadal/sanskrit-english-dictionary`](https://github.com/vkadal/sanskrit-english-dictionary) (Cologne lexicon editions of Apte, Macdonell, Monier-Williams) | **MIT** |
 | `12` Devanagari — Nepali Shabdakosh | [`Shubhamnpk/yoshabdakosh`](https://github.com/Shubhamnpk/yoshabdakosh) | **MIT** |
+| `13` Banking & Finance Abbreviations | Written for Gloss (`scripts/data/banking-abbreviations.tsv`) | the repository's licence |
 
-> **Unlicensed source.** `bdrillard/english-hindi-dictionary` carries no
-> licence file (checked 2026-11-11), so its author has not stated the terms
-> under which the word list may be redistributed. It is included with
-> attribution. Anyone redistributing Gloss packages should make their own
-> judgement, and can rebuild dictionary 11 without it or leave it out of a
-> build by removing the file from `bundled-dictionaries/` before packaging.
+**Release packages contain no Creative Commons-licensed text and no
+unlicensed data.** That is a rule of this project: packaging uses
+`npm run dictionaries:bundle`, which runs the builder with `--public`.
 
-A reader can remove any of them in **Preferences → Dictionaries**; a removed
-dictionary stays removed.
+### The full shelf, for personal use
 
-MDX files and glossaries a reader adds themselves are never redistributed by
-Gloss and remain governed by their owners' terms. Test PDFs are generated
-locally by the repository's fixture scripts and are excluded from Git.
+`npm run dictionaries` (without `--public`) builds a larger set on your own
+machine — nine subject dictionaries, Hindi, and English glosses for Nepali —
+that draws on sources which are *not* redistributed with Gloss:
+
+| Source | Terms |
+|---|---|
+| English Wikipedia "Glossary of …" articles and the list of computing abbreviations | CC BY-SA 4.0, © its contributors |
+| English Wiktionary entries for Hindi and Nepali, via the [kaikki.org](https://kaikki.org) extracts | CC BY-SA 4.0 and GFDL, © its contributors |
+| [`bdrillard/english-hindi-dictionary`](https://github.com/bdrillard/english-hindi-dictionary) | **no licence is published** in that repository (checked 2026-11-11) |
+
+The script downloads these directly from their publishers to your computer.
+Using them yourself is one thing; redistributing them means meeting the
+ShareAlike and attribution terms, and for the unlicensed list, having no
+stated permission at all. Do not put that set in `bundled-dictionaries/`.
+
+Gloss 2.4.0's Windows packages predate this rule and included the Wikipedia-
+derived dictionaries and the unlicensed Hindi list.
+
+A reader can remove any bundled dictionary in **Preferences → Dictionaries**;
+a removed dictionary stays removed. MDX files and glossaries a reader adds
+themselves are never redistributed by Gloss and remain governed by their
+owners' terms. Test PDFs are generated locally by the repository's fixture
+scripts and are excluded from Git.
 
 ## Wikimedia content
 

@@ -185,10 +185,41 @@ deduplicated list and `main/dicts.js` returns the first hit per dictionary:
 2. its NFC form,
 3. Unicode-aware edge-trimmed forms,
 4. script-appropriate variants (ZWJ/ZWNJ stripped),
-5. Latin case variants — **only** for Latin-script tokens.
+5. Latin case variants — **only** for Latin-script tokens,
+6. base forms of an inflected single word.
 
 Exact-first is what keeps `Paris` and `NASA` findable in dictionaries keyed on
 proper case. Latin casing is never applied to Devanagari.
+
+#### Base forms
+
+Dictionaries list headwords; text is full of inflections. Without the sixth
+rung, a quarter of the words in a real document came back "No definition
+found" — `transactions`, `stored`, `using`, `नेपालको`, `गरिएको`.
+
+`englishBaseForms()` applies WordNet-style ending rules (`-s`, `-es`, `-ies`,
+`-ed`, `-ing`, `-er`, `-est`, `-ly`, `-ness`, doubled consonants,
+possessives); `devanagariStems()` removes the postpositions and plural
+markers Nepali attaches to a word, maps Nepali verb forms back to the `-नु`
+dictionary form, and handles Hindi plural and oblique endings. Hyphenated
+compounds are tried joined, spaced, and finally by their parts.
+
+Three properties keep this honest:
+
+- **A proposal is only a proposal.** A base form counts for nothing unless a
+  dictionary actually has that headword, and it sits below every exact form,
+  so a real entry for the inflected word always wins.
+- **Conservative before aggressive.** `uses` tries `use` before `us`; the rule
+  order is the design, and is pinned by tests.
+- **The reader is told.** When the matched headword differs from the selection
+  the popup shows it, so `stored → store` is visible, not silent.
+
+Stems never end in a virama (a cut mid-conjunct) and are at least two letters.
+The ladder is capped at 32 candidates in both `text.js` and `main/dicts.js`.
+
+In a glossary's index, aliases are registered after all headwords, so an
+inflected form listed under one word (`saw` under `see`) can never hide
+another word's own entry.
 
 NFC deserves a note: Devanagari precomposed nukta forms (U+0958–U+095F) are
 composition exclusions, so NFC *decomposes* them. `क़िला` and its NFC form are
@@ -337,7 +368,10 @@ offered — is main-process-only.
 
 ### Packaged dictionaries
 
-Release builds carry twelve JSON dictionaries in `resources/dictionaries`.
+Release builds carry four JSON dictionaries in `resources/dictionaries`
+(general English, Sanskrit, Nepali, banking abbreviations — the builder's
+`--public` profile, which admits only WordNet, MIT-licensed and Gloss-written
+data).
 `dicts.restoreFromPrefs()` treats them differently from files a reader added:
 
 - **Offered once.** Each packaged file is added the first time a build
@@ -351,9 +385,14 @@ Release builds carry twelve JSON dictionaries in `resources/dictionaries`.
 - **Never duplicated.** A copy the reader already has under the same file
   name (for example one built by `npm run dictionaries`) wins.
 
+General English is seeded ahead of the rest, so the everyday meaning of a
+word is the first tab a reader sees. A dictionary that an older build shipped
+and the current one does not is dropped from the list without a "could not
+restore" notice: it was never the reader's file.
+
 Glossaries parse synchronously, so the loader yields to the event loop
-between files; a dozen large dictionaries cost about 0.7 s in total but never
-more than ~0.2 s at a stretch. `GLOSS_NO_BUNDLED_DICTIONARIES=1` disables the
+between files; the packaged set costs well under a second in total and the
+largest single file about 0.4 s. `GLOSS_NO_BUNDLED_DICTIONARIES=1` disables the
 packaged shelf (the test harness sets it).
 
 ---

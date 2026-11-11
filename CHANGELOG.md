@@ -5,6 +5,41 @@
 A reliability and layout release. Every item below was reproduced in the
 running app before it was fixed, and each has a regression test.
 
+### Dictionaries — "No definition found" for one word in four
+
+Measured on a 42-page set of study notes (14,260 words), only 75.6% of the
+words a reader could select got a definition offline. It is now 96.5% with
+the dictionaries in the release packages (97.7% with the full personal set),
+and about 89% on Nepali running text. What was wrong:
+
+- **The dictionaries were cut off mid-alphabet.** The builder sorted entries
+  A→Z and kept a round number of them: general English ended at "strip mall"
+  (no *the, this, transaction, very, with*), Hindi/Sanskrit and Nepali both
+  ended around फ. Nothing is truncated now: general English 120,000 → 139,000
+  entries, Nepali 65,000 → 123,000.
+- **Everyday words had no entry.** WordNet does not define *the, of, and,
+  with, would…*; 245 such words are now written in, and lead their entry —
+  *in* is a preposition before it is an abbreviation for inch.
+- **Inflected words missed.** Lookups now fall back to base forms:
+  *transactions → transaction*, *stored → store*, *RBB's → RBB*,
+  *नेपालको → नेपाल*, *गरिएको → गर्नु*. The popup shows the matched headword.
+- **Hundreds of adjectives were filed under unusable names** such as
+  `previous(a)` (a WordNet syntax marker left in the headword).
+- Added computing vocabulary newer than WordNet (*blockchain, malware, login,
+  HTTPS, VPN…*) and a banking abbreviations dictionary (*NRB, RBB, KYC, RTGS…*).
+- General English is listed first, so the everyday meaning comes before a
+  subject glossary's.
+- An inflected form listed under one word can no longer hide another word's
+  own entry.
+
+**What ships changed.** Release packages now carry four dictionaries built
+only from WordNet, MIT-licensed data and entries written for Gloss — no
+Creative Commons text and nothing unlicensed. The nine Wikipedia-derived
+subject dictionaries and the Hindi list are no longer bundled; `npm run
+dictionaries` still builds them (with Wiktionary Hindi and Nepali added) for
+use on your own machine. The 2.4.0 `.deb` never actually contained
+dictionaries; all three 2.5.0 packages do.
+
 ### Fixed
 
 - **The toolbar no longer runs off the window.** With the twelve bundled
@@ -70,7 +105,9 @@ running app before it was fixed, and each has a regression test.
   platform, release packages do bundle dictionary data, and the preference
   allowlist is listed as implemented.
 - `THIRD_PARTY_NOTICES.md` now states where the bundled dictionaries come
-  from and under what terms, and the same notice ships beside them.
+  from and under what terms, what the larger personal set draws on, and why
+  that set is not redistributed; the notice for the bundled files ships
+  beside them.
 
 ## 2.4.0 — 2026-11-11
 

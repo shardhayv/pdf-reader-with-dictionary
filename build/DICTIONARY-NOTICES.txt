@@ -2,34 +2,20 @@ Gloss — notices for the offline dictionaries in this folder
 ===========================================================
 
 The JSON files beside this notice are reference data, not part of the Gloss
-program. They were assembled by scripts/download-dictionaries.py in the Gloss
-source repository from the sources below, and each remains under the terms of
-its own source. Gloss's AGPL-3.0 licence covers the application only.
+program. They are built by scripts/download-dictionaries.py --public in the
+Gloss source repository. Each remains under the terms of its own source;
+Gloss's AGPL-3.0 licence covers the application only.
 
 Source: https://github.com/shardhayv/pdf-reader-with-dictionary
 
 
-01–09  Subject dictionaries (computer science, philosophy, economics, law,
-       history, biology and medicine, chemistry, mathematics and physics,
-       psychology and literature)
--------------------------------------------------------------------------
-Definitions are taken from the "Glossary of …" and related list articles of
-the English Wikipedia, combined with subject-filtered entries from Princeton
-WordNet (see file 10 below).
-
-  Wikipedia text © its contributors, licensed under the Creative Commons
-  Attribution-ShareAlike 4.0 International licence (CC BY-SA 4.0):
-  https://creativecommons.org/licenses/by-sa/4.0/
-  Each article's authors and revision history are available from its page at
-  https://en.wikipedia.org/. The text has been shortened and reformatted.
-  Because of the ShareAlike term, files 01–09 are themselves offered under
-  CC BY-SA 4.0.
-
-
 10  General English
 -------------------------------------------------------------------------
-Derived from Princeton WordNet 3.0, as distributed in the NLTK "wordnet"
-corpus package (https://www.nltk.org/nltk_data/).
+Princeton WordNet 3.0, as distributed in the NLTK "wordnet" corpus package
+(https://www.nltk.org/nltk_data/), together with entries written for Gloss:
+everyday words WordNet does not define (the, of, and, with …) and computing
+vocabulary newer than WordNet. The Gloss-written entries are in
+scripts/data/ in the source repository, under the repository's licence.
 
   WordNet Release 3.0. This software and database is being provided to you,
   the LICENSEE, by Princeton University under the following license. By
@@ -59,25 +45,71 @@ corpus package (https://www.nltk.org/nltk_data/).
   LICENSEE agrees to preserve same.
 
 
-11  Devanagari — Hindi & Sanskrit
+11  Devanagari — Sanskrit
 -------------------------------------------------------------------------
-Sanskrit entries: vkadal/sanskrit-english-dictionary (MIT licence),
+vkadal/sanskrit-english-dictionary,
   https://github.com/vkadal/sanskrit-english-dictionary — a unified form of
   the Cologne Digital Sanskrit Lexicon editions of Apte, Macdonell and
-  Monier-Williams.
-Hindi entries: bdrillard/english-hindi-dictionary,
-  https://github.com/bdrillard/english-hindi-dictionary — that repository
-  publishes no licence file. The word list is included here as found, with
-  attribution; its redistribution terms are not stated by its author.
-A small number of hand-written entries were added by the Gloss author.
+  Monier-Williams. A small number of entries were written for Gloss.
+
+  MIT License
+
+  Copyright (c) 2025 [Your Name]
+  (reproduced exactly as published in that repository's LICENSE file)
+
+  Permission is hereby granted, free of charge, to any person obtaining a
+  copy of this software and associated documentation files (the "Software"),
+  to deal in the Software without restriction, including without limitation
+  the rights to use, copy, modify, merge, publish, distribute, sublicense,
+  and/or sell copies of the Software, and to permit persons to whom the
+  Software is furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+  DEALINGS IN THE SOFTWARE.
 
 
 12  Devanagari — Nepali Shabdakosh
 -------------------------------------------------------------------------
-Shubhamnpk/yoshabdakosh (MIT licence),
-  https://github.com/Shubhamnpk/yoshabdakosh — an open dataset of the Nepali
-  Brihat Shabdakosh.
+Shubhamnpk/yoshabdakosh, https://github.com/Shubhamnpk/yoshabdakosh — an
+  open dataset of the Nepali Brihat Shabdakosh.
+
+  MIT License
+
+  Copyright (c) 2026 Yo Shabdakosh contributors
+
+  Permission is hereby granted, free of charge, to any person obtaining a
+  copy of this software and associated documentation files (the "Software"),
+  to deal in the Software without restriction, including without limitation
+  the rights to use, copy, modify, merge, publish, distribute, sublicense,
+  and/or sell copies of the Software, and to permit persons to whom the
+  Software is furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+  DEALINGS IN THE SOFTWARE.
 
 
-If you hold rights in any of this material and want it corrected or removed,
-please open an issue at the repository above.
+13  Banking & Finance Abbreviations
+-------------------------------------------------------------------------
+Written for Gloss; scripts/data/banking-abbreviations.tsv in the source
+repository, under the repository's licence.
+
+
+No Creative Commons-licensed text and no unlicensed data is included in this
+package. If you hold rights in any of this material and want it corrected or
+removed, please open an issue at the repository above.

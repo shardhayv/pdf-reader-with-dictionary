@@ -54,3 +54,6 @@ test/screenshots/
 # Playwright
 test-results/
 playwright-report/
+
+# Local session handoff notes (not part of the project)
+HANDOFF.md

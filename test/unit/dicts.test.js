@@ -394,3 +394,44 @@ test('GLOSS_NO_BUNDLED_DICTIONARIES turns the packaged shelf off', () => {
     else process.env.GLOSS_NO_BUNDLED_DICTIONARIES = before;
   }
 });
+
+test('general English is seeded ahead of the other packaged dictionaries', async () => {
+  clearShelf();
+  const pkg = makePackage(['01-subject.json', '10-general-english-wordnet.json', '11-devanagari.json']);
+  assert.deepEqual(dicts.getBundledDictionaryPaths([pkg]).map(p => path.basename(p)),
+    ['10-general-english-wordnet.json', '01-subject.json', '11-devanagari.json']);
+  await dicts.restoreFromPrefs({ bundledDirs: [pkg] });
+  assert.equal(dicts.list()[0].name, 'Packaged 10-general-english-wordnet.json');
+});
+
+test('a dictionary an older build shipped and this one does not is dropped quietly', async () => {
+  clearShelf();
+  // Simulate an upgrade: the old package had 01 and 10, the new one only 10.
+  const oldPkg = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gloss-old-')), 'dictionaries');
+  const newPkg = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gloss-new-')), 'dictionaries');
+  fs.mkdirSync(newPkg);
+  fs.writeFileSync(path.join(newPkg, '10-general.json'), JSON.stringify({
+    format: 'gloss-glossary', version: 1, scope: 'global', name: 'General',
+    entries: [{ word: 'shelf', definition: 'a flat surface' }],
+  }));
+  store.setPrefsInternal(prefs => {
+    prefs.dictionaries.order = [path.join(oldPkg, '01-subject.json'), path.join(oldPkg, '10-general.json')];
+    prefs.dictionaries.enabled = {};
+    prefs.dictionaries.bundledSeen = ['01-subject.json', '10-general.json'];
+  });
+  const results = await dicts.restoreFromPrefs({ bundledDirs: [fs.realpathSync(newPkg)] });
+  // No "could not restore" failure for the retired file; the kept one follows.
+  assert.deepEqual(results.map(r => r.success), [true]);
+  assert.deepEqual(dicts.list().map(d => d.name), ['General']);
+});
+
+test('the candidate ladder may be long, but is still capped', async () => {
+  resetDictionaries();
+  const file = makeDictionary('long', { base: 'found at the end of a long ladder' });
+  await dicts.loadMany([file]);
+  const ladder = Array.from({ length: 31 }, (_, i) => `miss${i}`).concat('base');
+  const [hit] = await dicts.lookup(ladder);
+  assert.equal(hit.matchedCandidate, 'base');
+  // Beyond the cap nothing is consulted.
+  assert.deepEqual(await dicts.lookup(Array.from({ length: 32 }, (_, i) => `miss${i}`).concat('base')), []);
+});

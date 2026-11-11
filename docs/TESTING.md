@@ -83,7 +83,7 @@ GLOSS_TEST_SANDBOX=1 npm run test:e2e
 
 Each spec launches with its own temporary `--user-data-dir`, so tests never read
 or write your real preferences and recent documents. The harness also sets
-`GLOSS_NO_BUNDLED_DICTIONARIES=1`: a checkout that has the twelve packaged
+`GLOSS_NO_BUNDLED_DICTIONARIES=1`: a checkout that has the packaged
 dictionaries in `bundled-dictionaries/` would otherwise seed them into every
 run and break specs that assert exact dictionary lists and lookup results.
 
@@ -101,7 +101,10 @@ xvfb-run -a -s "-screen 0 2560x1600x24" npm run test:e2e
 **`test/unit/text.test.js`** — grapheme integrity for conjuncts, matras, nukta,
 chandrabindu and joiners; word segmentation; Unicode-aware edge trimming
 (including danda); the candidate ladder (exact-first, Latin-only casing, NFC
-variants for precomposed nukta forms); auto-lookup gating; the search index,
+variants for precomposed nukta forms); base forms — English inflections,
+possessives and compounds, Nepali postpositions and verb forms, Hindi plural
+endings — always after the exact forms, conservative before aggressive, and
+never cutting a conjunct; auto-lookup gating; the search index,
 including offset round-tripping and words split across text items; text-quality
 classification.
 
@@ -113,7 +116,7 @@ one-letter URL schemes);
 emptiness handling, and distinct error codes.
 
 **`test/unit/glossary.test.js`** — versioned and legacy JSON parsing; exact,
-alias, NFC and Devanagari lookup; book path/fingerprint scoping; global scope;
+alias, NFC and Devanagari lookup; an alias never hiding a real headword; book path/fingerprint scoping; global scope;
 draft counts; contextual occurrences; value limits; and malformed-file errors.
 
 **`test/unit/glossary-builder.test.js`** — English/Devanagari candidate quality,
@@ -135,7 +138,9 @@ and the packaged-dictionary record are validated and not renderer-writable.
 **`test/unit/dicts.test.js`** — candidate ordering and priority across MDX and
 JSON sources, book scoping, transactional reload, and the packaged-dictionary
 rules: offered once, a removed one stays removed, a moved package is followed
-with its on/off state, and a reader's own copy is never duplicated.
+with its on/off state, a reader's own copy is never duplicated, general
+English is seeded first, and a dictionary a newer build no longer ships is
+dropped without an error.
 
 **`test/e2e/security.spec.js`** — 25 hostile dictionary payloads through the
 real sanitizer; link rewriting to inert `data-*` attributes; the exact

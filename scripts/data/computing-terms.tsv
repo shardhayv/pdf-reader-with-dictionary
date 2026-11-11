@@ -1,0 +1,99 @@
+# Computing, internet and digital-finance vocabulary newer than WordNet 3.0
+# (2006), and the IT abbreviations a reader of technical material meets.
+# Written for Gloss. Tab-separated:
+#   word <TAB> part of speech <TAB> definition <TAB> alias|alias…
+# Merged into the general English dictionary, after any WordNet senses.
+blockchain	noun	A shared digital ledger in which records are grouped into blocks, each linked to the one before by a cryptographic hash, so that past entries cannot be altered without detection.	blockchains
+Bitcoin	noun	The first and largest cryptocurrency, launched in 2009; transactions are recorded on a public blockchain and no central authority issues it.	bitcoin|bitcoins|BTC
+cryptocurrency	noun	A digital currency that uses cryptography to secure transactions and control the creation of new units, usually recorded on a blockchain.	cryptocurrencies|crypto
+Ethereum	noun	A public blockchain platform that runs smart contracts; its currency is ether (ETH).	ethereum
+stablecoin	noun	A cryptocurrency designed to hold a steady value by being tied to a currency or other asset.	stablecoins
+fintech	noun	Financial technology: the use of software and digital platforms to deliver financial services; also a company that does so.	FinTech
+DLT	abbreviation	Distributed Ledger Technology: a database shared and synchronised across many computers with no central administrator; blockchain is one kind.	
+malware	noun	Software written to damage, disrupt or gain unauthorised access to a computer system; includes viruses, worms, trojans and ransomware.	
+ransomware	noun	Malware that encrypts a victim's files or locks a system and demands payment to restore access.	
+phishing	noun	Tricking people into revealing passwords or card details through messages or websites that imitate a trusted organisation.	
+spyware	noun	Software that secretly gathers information about a user's activity and sends it to someone else.	
+botnet	noun	A network of infected computers controlled remotely, typically used to send spam or launch attacks.	botnets
+cyber	adjective	Relating to computers, networks and the internet: cyber attack, cyber law.	
+cybersecurity	noun	The protection of computers, networks and data from unauthorised access, attack or damage.	cyber security|cyber-security
+cyberattack	noun	An attempt to damage, disrupt or break into a computer system or network.	cyber attack|cyberattacks
+cybercrime	noun	Crime committed using computers or the internet.	cyber crime
+antivirus	noun, adjective	Software that detects and removes malware.	anti-virus
+biometric	adjective	Using a person's physical characteristics — fingerprint, face, iris, voice — to confirm identity.	Biometric
+smartphone	noun	A mobile phone with a touchscreen, internet access and the ability to run apps.	smartphones
+app	noun	An application: a program built for a particular task, especially one for a phone or tablet.	apps
+login	noun	The act of signing in to a system by proving identity; also the credentials used.	log in|log-in|logins
+logout	noun	The act of ending a signed-in session.	log out|log-out
+username	noun	The name that identifies a user to a system, entered together with a password.	usernames|user name
+inbox	noun	The folder where incoming email or messages arrive.	
+offline	adjective, adverb	Not connected to a network or the internet; done without such a connection.	
+extranet	noun	A private network that gives selected outsiders — partners, suppliers, customers — controlled access to part of an organisation's intranet.	extranets
+webpage	noun	A single document on the World Wide Web, shown in a browser.	web page|webpages
+stylesheet	noun	A file of rules, usually CSS, that defines how a web page looks.	style sheet
+touchscreen	noun	A display that detects the touch of a finger or stylus and uses it as input.	touch screen
+timestamp	noun	A record of the date and time at which an event happened or data was created.	timestamps|time stamp
+validator	noun	A person or program that checks something is valid; in a blockchain, a participant that verifies transactions and adds blocks.	validators
+programmable	adjective	Able to be given instructions to perform a task automatically.	
+programmability	noun	The capacity to be programmed.	
+interbank	adjective	Taking place between banks: interbank transfer, interbank rate.	inter-bank
+contactless	adjective	Working without physical contact: a contactless card pays when held near the reader.	
+microfinance	noun	Small loans, savings and other financial services for people with low incomes who lack access to ordinary banking.	
+virtualization	noun	Creating virtual versions of computers, storage or networks so that several can run on one physical machine.	virtualisation
+chatbot	noun	A program that holds a conversation with people in text or speech.	chatbots
+blog	noun	A website or page of regularly updated posts, usually by one author.	blogs
+podcast	noun	A series of spoken audio episodes distributed over the internet.	podcasts
+wiki	noun	A website whose pages its users can edit together.	wikis
+emoji	noun	A small picture used in digital messages to express an idea or feeling.	emojis
+hashtag	noun	A word or phrase preceded by # that labels a social-media post by topic.	hashtags
+FLOPS	abbreviation	Floating-point operations per second: a measure of computer speed. A petaFLOPS is 10^15 and an exaFLOPS 10^18 per second.	flops|PetaFLOPS|petaflops|PFLOPS|ExaFLOPS|exaflops|TeraFLOPS|GigaFLOPS|MegaFLOPS
+JavaScript	noun	The programming language that runs in web browsers and makes pages interactive; also used on servers.	Javascript|JS
+HTML5	noun	The fifth major version of HTML, adding native audio, video, graphics and richer forms.	
+CSS	abbreviation	Cascading Style Sheets: the language that describes the presentation — layout, colours, fonts — of a web page.	
+MySQL	noun	A widely used open-source relational database management system.	
+NoSQL	noun	Database systems that store data in forms other than relational tables, such as documents or key–value pairs.	
+API	abbreviation	Application Programming Interface: a defined way for one program to request services from another.	APIs
+SDK	abbreviation	Software Development Kit: tools and libraries for building software for a particular platform.	
+IDE	abbreviation	Integrated Development Environment: one program combining an editor, build tools and a debugger.	
+ISP	abbreviation	Internet Service Provider: a company that connects customers to the internet.	ISPs
+VPN	abbreviation	Virtual Private Network: an encrypted connection over a public network that behaves like a private one.	VPNs
+HTTPS	abbreviation	Hypertext Transfer Protocol Secure: HTTP carried over an encrypted TLS connection, so that data between browser and website cannot be read or altered.	
+HTTP	abbreviation	Hypertext Transfer Protocol: the rules by which browsers request pages from web servers.	
+SSL	abbreviation	Secure Sockets Layer: the earlier protocol for encrypting internet connections, now replaced by TLS.	
+TLS	abbreviation	Transport Layer Security: the protocol that encrypts data travelling between two computers; the basis of HTTPS.	
+IMAP	abbreviation	Internet Message Access Protocol: lets a mail program read email that stays stored on the server, in step across devices.	
+POP3	abbreviation	Post Office Protocol version 3: downloads email from a server to one device, usually removing it from the server.	POP
+SMTP	abbreviation	Simple Mail Transfer Protocol: the protocol used to send email between servers.	
+FTP	abbreviation	File Transfer Protocol: a standard way of moving files between computers on a network.	
+DNS	abbreviation	Domain Name System: translates names such as example.com into the numeric IP addresses computers use.	
+DHCP	abbreviation	Dynamic Host Configuration Protocol: automatically gives devices on a network an IP address and settings.	
+TCP	abbreviation	Transmission Control Protocol: delivers data between computers reliably and in order.	
+UDP	abbreviation	User Datagram Protocol: sends data quickly without guaranteeing delivery or order.	
+IP	abbreviation	Internet Protocol: the addressing and routing rules of the internet. An IP address identifies a device on a network.	
+LAN	abbreviation	Local Area Network: a network covering one building or site.	LANs
+WAN	abbreviation	Wide Area Network: a network spanning cities or countries.	WANs
+MAN	abbreviation	Metropolitan Area Network: a network covering a city.	
+URL	abbreviation	Uniform Resource Locator: the address of a page or file on the web.	URLs
+CPU	abbreviation	Central Processing Unit: the part of a computer that carries out instructions; its processor.	CPUs
+GPU	abbreviation	Graphics Processing Unit: a processor built for images and for large parallel calculations.	GPUs
+RAM	abbreviation	Random-Access Memory: a computer's fast working memory, cleared when power is lost.	
+ROM	abbreviation	Read-Only Memory: memory whose contents are kept without power and are not normally changed.	
+SSD	abbreviation	Solid-State Drive: storage using flash memory with no moving parts; faster than a hard disk.	SSDs
+HDD	abbreviation	Hard Disk Drive: storage that records data on spinning magnetic disks.	HDDs
+USB	abbreviation	Universal Serial Bus: the standard connector and protocol for attaching devices to a computer.	
+BIOS	abbreviation	Basic Input/Output System: firmware that starts a computer's hardware before the operating system loads.	
+GUI	abbreviation	Graphical User Interface: windows, icons and menus operated with a pointer or touch.	
+CLI	abbreviation	Command-Line Interface: operating a computer by typing commands.	
+OS	abbreviation	Operating System: the software that manages a computer's hardware and runs its programs.	
+DBMS	abbreviation	Database Management System: software for creating, querying and maintaining databases.	RDBMS
+SQL	abbreviation	Structured Query Language: the standard language for querying and changing relational databases.	
+ERP	abbreviation	Enterprise Resource Planning: integrated software running an organisation's core processes — finance, stock, payroll.	
+CRM	abbreviation	Customer Relationship Management: software and practices for managing dealings with customers.	
+IoT	abbreviation	Internet of Things: everyday devices fitted with sensors and network connections so they can exchange data.	
+AI	abbreviation	Artificial Intelligence: computer systems that perform tasks normally needing human intelligence.	
+ML	abbreviation	Machine Learning: methods by which computers improve at a task by finding patterns in data.	
+UPS	abbreviation	Uninterruptible Power Supply: a battery unit that keeps equipment running briefly when mains power fails.	
+NTA	abbreviation	Nepal Telecommunications Authority: the regulator of telecommunications in Nepal.	
+USD	abbreviation	United States dollar.	
+Microsoft	name	An American technology company, maker of Windows, Office and the Azure cloud platform.	
+Gmail	name	Google's email service.	

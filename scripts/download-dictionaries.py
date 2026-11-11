@@ -1,11 +1,31 @@
 #!/usr/bin/env python3
 """
-scripts/download-dictionaries.py — Download and build category-wise global
-dictionaries for Gloss from peer-edited Wikipedia Academic Glossaries and
-Princeton WordNet 3.0 domain synsets.
+scripts/download-dictionaries.py — build Gloss's offline dictionaries.
 
-Writes 10 category JSON dictionaries into ~/.local/share/gloss/dictionaries/
-(symlinked at ~/Dictionaries) and registers them in ~/.config/gloss/preferences.json.
+Two profiles:
+
+  (default)   The full shelf for your own machine: nine subject dictionaries
+              (Wikipedia glossaries + WordNet), general English, Hindi and
+              Sanskrit, Nepali, and banking abbreviations. Some of this is
+              CC BY-SA (Wikipedia, Wiktionary) and one Hindi word list has no
+              published licence — fine for personal use, see
+              THIRD_PARTY_NOTICES.md before redistributing.
+
+  --public    Only data that is safe to ship in a release: WordNet, the
+              MIT-licensed Sanskrit and Nepali sets, and the entries written
+              for Gloss in scripts/data/. Nothing CC-licensed, nothing
+              unlicensed. This is what bundled-dictionaries/ must hold when
+              packaging.
+
+Options:  --force        rebuild even if the files exist
+          --out DIR      write the files to DIR
+          --no-register  do not add the files to Gloss's preferences
+                         (implied by --public)
+Environment:  GLOSS_DICT_DIR (output folder), GLOSS_PREFS_PATH,
+              GLOSS_BUILD_CACHE (keep downloads between runs)
+
+Output goes to ~/.local/share/gloss/dictionaries/ and is registered in
+~/.config/gloss/preferences.json unless told otherwise.
 """
 
 import csv
@@ -24,7 +44,16 @@ import zipfile
 from collections import defaultdict
 
 USER_AGENT = "GlossDictionaryBuilder/2.3 (https://github.com/shardhayv/pdf-reader-with-dictionary)"
-OUT_DIR = os.path.expanduser(os.environ.get("GLOSS_DICT_DIR", "~/.local/share/gloss/dictionaries"))
+PUBLIC = "--public" in sys.argv
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+DEVANAGARI = re.compile(r"[\u0900-\u097F]")
+def _option(name):
+    """Value following a command-line option, or None."""
+    return sys.argv[sys.argv.index(name) + 1] if name in sys.argv[:-1] else None
+
+
+OUT_DIR = os.path.abspath(os.path.expanduser(
+    _option("--out") or os.environ.get("GLOSS_DICT_DIR", "~/.local/share/gloss/dictionaries")))
 PREFS_PATH = os.path.expanduser(os.environ.get("GLOSS_PREFS_PATH", "~/.config/gloss/preferences.json"))
 
 CATEGORIES = [
@@ -330,6 +359,9 @@ CATEGORIES = [
 ]
 
 
+ABBREVIATION_PAGE = "List_of_computing_and_IT_abbreviations"
+
+
 def fetch_wiki_html(page, cache_dir):
     cache_file = os.path.join(cache_dir, f"wiki_{urllib.parse.quote(page, safe='')}.html")
     if os.path.exists(cache_file):
@@ -539,6 +571,132 @@ def parse_wiki_glossary(html):
     return entries
 
 
+def read_tsv(name):
+    """Rows of a tab-separated data file in scripts/data/, comments skipped."""
+    rows = []
+    with open(os.path.join(DATA_DIR, name), "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if not line.strip() or line.startswith("#"):
+                continue
+            cols = line.split("\t")
+            cols += [""] * (4 - len(cols))
+            rows.append(cols)
+    return rows
+
+
+def load_essentials():
+    """Everyday words WordNet has no entry for: the, of, and, with, would…"""
+    out = {}
+    for word, pos, definition, aliases in read_tsv("english-essentials.tsv"):
+        out[word] = {
+            "pos": pos,
+            "definition": definition,
+            "aliases": [a for a in aliases.split("|") if a],
+        }
+    return out
+
+
+def load_computing_terms():
+    """Vocabulary newer than WordNet 3.0, and common IT abbreviations."""
+    out = {}
+    for word, pos, definition, aliases in read_tsv("computing-terms.tsv"):
+        out[word] = {"pos": pos, "definition": definition, "aliases": [a for a in aliases.split("|") if a]}
+    return out
+
+
+def build_banking_dictionary(output_paths):
+    entries = []
+    for abbr, expansion, explanation, aliases in read_tsv("banking-abbreviations.tsv"):
+        item = {
+            "word": abbr,
+            "definition": f"<b>{html_mod.escape(expansion)}</b> — {html_mod.escape(explanation)}",
+        }
+        al = sorted({a for a in aliases.split("|") if a} | {expansion})
+        if al:
+            item["aliases"] = al
+        entries.append(item)
+    path = os.path.join(OUT_DIR, "13-banking-finance-abbreviations.json")
+    payload = {
+        "format": "gloss-glossary", "version": 1, "scope": "global",
+        "name": "Banking & Finance Abbreviations", "language": "en",
+        "entries": sorted(entries, key=lambda x: x["word"].lower()),
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))
+    print(f"  ✓ {'Banking & Finance Abbreviations':46s}: {len(entries):6,d} entries")
+    output_paths.append(path)
+
+
+def parse_abbreviation_list(html):
+    """Wikipedia's "ABBR—Expansion" lists (List of computing and IT abbreviations)."""
+    entries = {}
+    for li in re.findall(r"<li\b[^>]*>([\s\S]*?)</li>", html or "", flags=re.I):
+        text = strip_tags(re.sub(r"<sup\b[\s\S]*?</sup>", "", li, flags=re.I))
+        m = re.match(r"^([A-Za-z0-9][A-Za-z0-9 .+/#&'-]{0,24}?)\s*[—–]\s*(.{3,200})$", text)
+        if not m:
+            continue
+        abbr, expansion = m.group(1).strip(), m.group(2).strip()
+        if abbr in entries:
+            if expansion not in entries[abbr]["definition"]:
+                entries[abbr]["definition"] += f"<br>{html_mod.escape(expansion)}"
+            continue
+        entries[abbr] = {"word": abbr, "definition": html_mod.escape(expansion), "aliases": []}
+    return entries
+
+
+def load_kaikki(lang, cache_dir):
+    """
+    English Wiktionary's entries for one language, from the kaikki.org
+    machine-readable extract (CC BY-SA 4.0 / GFDL). Returns
+    {headword: {"senses": [html…], "aliases": {inflected forms}}}.
+    Inflected forms matter as much as headwords: a reader meets लड़कों, not लड़का.
+    """
+    path = os.path.join(cache_dir, f"kaikki-{lang}.jsonl")
+    if not os.path.exists(path):
+        print(f"Downloading Wiktionary extract for {lang} (kaikki.org)...")
+        req = urllib.request.Request(
+            f"https://kaikki.org/dictionary/{lang}/kaikki.org-dictionary-{lang}.jsonl",
+            headers={"User-Agent": USER_AGENT},
+        )
+        with urllib.request.urlopen(req, timeout=120) as resp, open(path + ".part", "wb") as out_f:
+            shutil.copyfileobj(resp, out_f)
+        os.replace(path + ".part", path)
+
+    pos_abbr = {"noun": "n.", "verb": "v.", "adj": "adj.", "adv": "adv.", "name": "name",
+                "pron": "pron.", "postp": "postp.", "conj": "conj.", "num": "num.",
+                "particle": "particle", "intj": "interj.", "det": "det.", "prep": "prep."}
+    skip_tags = {"romanization", "table-tags", "inflection-template", "class"}
+    out = {}
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            w = (e.get("word") or "").strip()
+            if not w or len(w) > 60 or not DEVANAGARI.search(w):
+                continue
+            pos = pos_abbr.get(e.get("pos", ""), "")
+            item = out.setdefault(w, {"senses": [], "aliases": set()})
+            for sense in e.get("senses", []):
+                glosses = [g.strip() for g in (sense.get("glosses") or []) if g and g.strip()]
+                if not glosses or len(item["senses"]) >= 6:
+                    continue
+                text = " ".join(glosses)[:320]
+                sense_html = (f"<i>{pos}</i> " if pos else "") + html_mod.escape(text)
+                if sense_html not in item["senses"]:
+                    item["senses"].append(sense_html)
+            for form in e.get("forms", []):
+                text = (form.get("form") or "").strip()
+                if (not text or text == w or len(text) > 60 or " " in text
+                        or not DEVANAGARI.search(text)
+                        or skip_tags.intersection(form.get("tags") or [])):
+                    continue
+                item["aliases"].add(text)
+    return {w: v for w, v in out.items() if v["senses"]}
+
+
 def load_wordnet(cache_dir):
     zip_path = os.path.join(cache_dir, "wordnet.zip")
     if not os.path.exists(zip_path):
@@ -574,7 +732,10 @@ def load_wordnet(cache_dir):
             ss_type = parts[2]
             pos_key = "a" if ss_type == "s" else ss_type
             w_cnt = int(parts[3], 16)
-            words = [parts[4 + 2 * i].replace("_", " ") for i in range(w_cnt)]
+            # Adjective lemmas carry a syntactic marker — previous(a), galore(ip),
+            # ablaze(p). It is not part of the word; left in, "previous" and
+            # hundreds of other adjectives were filed under names nobody types.
+            words = [re.sub(r"\((?:a|p|ip)\)$", "", parts[4 + 2 * i]).replace("_", " ") for i in range(w_cnt)]
             idx = 4 + 2 * w_cnt
             p_cnt = int(parts[idx])
             idx += 1
@@ -657,6 +818,108 @@ def synset_matches_category(ss_key, synsets, cat_topics, cat_gloss_tags, cat_roo
     return False
 
 
+def build_general_english(cache_dir, output_paths, force=False, wordnet=None):
+    """
+    General English: every WordNet lemma, plus the everyday words WordNet has
+    no entry for (scripts/data/english-essentials.tsv), which lead their entry.
+
+    Nothing is truncated. An earlier version sorted the entries A→Z and kept
+    the first 120,000, which silently dropped every word after "strip mall" —
+    the, this, transaction, very, with — a fifth of the dictionary.
+    """
+    gen_path = os.path.join(OUT_DIR, "10-general-english-wordnet.json")
+    if os.path.exists(gen_path) and not force:
+        print(f"  ✓ {'General English (cached)':46s}")
+        output_paths.append(gen_path)
+        return
+    print("Building General English (WordNet 3.0 + everyday words)...")
+    synsets, inflections = wordnet or load_wordnet(cache_dir)
+    essentials = load_essentials()
+
+    general_senses = defaultdict(list)
+    general_example = {}
+    for ss_key, ss in synsets.items():
+        for w in ss["words"]:
+            if len(w) > 45 or w.count(" ") > 1:
+                continue
+            if len(general_senses[w]) < 4:
+                general_senses[w].append(f"<i>{ss['pos']}</i> {html_mod.escape(ss['defn'])}")
+            if ss["example"] and w not in general_example:
+                general_example[w] = ss["example"]
+
+    def essential_sense(item):
+        return f"<i>{html_mod.escape(item['pos'])}</i> {html_mod.escape(item['definition'])}"
+
+    # "In" at the start of a sentence must not open on indium: where WordNet
+    # has a capitalised homograph of an everyday word, that entry leads with
+    # the everyday sense too.
+    leading = {}
+    for w, item in essentials.items():
+        leading[w] = item
+        cap = w[:1].upper() + w[1:]
+        if cap != w and cap in general_senses:
+            leading[cap] = {**item, "aliases": []}
+
+    computing = load_computing_terms()
+
+    def singular_of(w):
+        """
+        WordNet gives some plurals an entry of their own — "transactions" is the
+        minutes of a meeting, "customs" a tax. The exact entry wins a lookup,
+        so without this a reader who selects "transactions" in a banking text
+        is told about meeting minutes and nothing else. Such an entry also
+        says what it is the plural of.
+        """
+        if not (w.islower() and w.isalpha() and len(w) > 4 and w.endswith("s")):
+            return None
+        bases = [w[:-1]]
+        if w.endswith("ies"):
+            bases.insert(0, w[:-3] + "y")
+        elif w.endswith("es"):
+            bases.append(w[:-2])
+        for base in bases:
+            noun = next((x for x in general_senses.get(base, []) if x.startswith("<i>n.</i>")), None)
+            if noun:
+                return base, noun[len("<i>n.</i>"):].strip()
+        return None
+
+    general_entries = []
+    for w in sorted(set(general_senses) | set(essentials) | set(computing), key=lambda x: (x.lower(), x)):
+        lead = leading.get(w)
+        modern = computing.get(w)
+        senses = ([essential_sense(lead)] if lead else []) + general_senses.get(w, [])[: 3 if lead else 4]
+        if modern:
+            senses.append(essential_sense(modern))
+        plural = None if lead else singular_of(w) if w in general_senses else None
+        if plural:
+            base, meaning = plural
+            senses.append(
+                f'<small>also the plural of</small> <a href="entry://{html_mod.escape(base, quote=True)}">'
+                f"{html_mod.escape(base)}</a>: {meaning}"
+            )
+        defn = senses[0] if len(senses) == 1 else "<ol>" + "".join(f"<li>{x}</li>" for x in senses) + "</ol>"
+        aliases = (set(inflections.get(w, set())) | set(lead["aliases"] if lead else [])
+                   | set(modern["aliases"] if modern else []))
+        aliases.discard(w)
+        item = {"word": w, "definition": defn}
+        if aliases:
+            item["aliases"] = sorted(aliases)[:12]
+        if w in general_example and not lead:
+            item["example"] = general_example[w]
+        general_entries.append(item)
+
+    payload = {
+        "format": "gloss-glossary", "version": 1, "scope": "global",
+        "name": "General English (WordNet 3.0)", "language": "en",
+        "entries": general_entries,
+    }
+    with open(gen_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))
+    size_mb = os.path.getsize(gen_path) / (1024 * 1024)
+    print(f"  ✓ {'General English (WordNet 3.0)':46s}: {len(general_entries):6,d} entries [{size_mb:.2f} MB]")
+    output_paths.append(gen_path)
+
+
 def build_devanagari_dictionaries(cache_dir, output_paths, force=False):
     # 11. Devanagari — Hindi & Sanskrit (हिन्दी · संस्कृत ↔ English)
     hi_sa_path = os.path.join(OUT_DIR, "11-devanagari-hindi-sanskrit.json")
@@ -694,32 +957,50 @@ def build_devanagari_dictionaries(cache_dir, output_paths, force=False):
             deva_senses[w].append(df)
             deva_aliases[w].update(al)
 
-        # Download English-Hindi CSV and index by Devanagari headword -> English meanings
-        hi_csv_url = "https://raw.githubusercontent.com/bdrillard/english-hindi-dictionary/master/English-Hindi%20Dictionary.csv"
-        try:
-            req = urllib.request.Request(hi_csv_url, headers={"User-Agent": USER_AGENT})
-            raw_csv = urllib.request.urlopen(req, timeout=30).read().decode("utf-8", errors="ignore")
-            reader = csv.reader(io.StringIO(raw_csv))
-            next(reader, None)
-            for row in reader:
-                if len(row) < 2:
-                    continue
-                eword = row[0].strip(" \"'.,;:/-*")
-                hword_raw = row[1].strip(" \"'.,;:")
-                pos = row[2].strip().lower() if len(row) > 2 else ""
-                if not eword or not hword_raw or len(eword) > 60:
-                    continue
-                if not re.search(r"[\u0900-\u097F]", hword_raw):
-                    continue
-                pos_abbr = {"noun": "n.", "verb": "v.", "adjective": "adj.", "adverb": "adv."}.get(pos, "")
-                sense = f"<i>{pos_abbr}</i> {html_mod.escape(eword)}" if pos_abbr else html_mod.escape(eword)
-                for hw in re.split(r"[,;/]", hword_raw):
-                    hw = hw.strip(" .")
-                    if 1 <= len(hw) <= 60 and re.search(r"[\u0900-\u097F]", hw):
-                        if len(deva_senses[hw]) < 8 and sense not in deva_senses[hw]:
-                            deva_senses[hw].append(sense)
-        except Exception as e:
-            print(f"  [warn] Hindi CSV download error: {e}")
+        # Hindi from English Wiktionary (kaikki.org extract, CC BY-SA 4.0): good
+        # glosses and, crucially, inflected forms. Full profile only.
+        if not PUBLIC:
+            try:
+                hindi = load_kaikki("Hindi", cache_dir)
+                for w, item in hindi.items():
+                    for sense in item["senses"][:4]:
+                        if sense not in deva_senses[w]:
+                            deva_senses[w].append(sense)
+                    deva_aliases[w].update(item["aliases"])
+                print(f"  Wiktionary Hindi: {len(hindi):,} headwords")
+            except Exception as e:
+                print(f"  [warn] Wiktionary Hindi unavailable: {e}")
+
+        # A second Hindi word list (bdrillard/english-hindi-dictionary). Its
+        # repository publishes no licence, so it is never part of --public.
+        if not PUBLIC:
+            # Download English-Hindi CSV and index by Devanagari headword -> English meanings
+            hi_csv_url = "https://raw.githubusercontent.com/bdrillard/english-hindi-dictionary/master/English-Hindi%20Dictionary.csv"
+            try:
+                req = urllib.request.Request(hi_csv_url, headers={"User-Agent": USER_AGENT})
+                raw_csv = urllib.request.urlopen(req, timeout=30).read().decode("utf-8", errors="ignore")
+                reader = csv.reader(io.StringIO(raw_csv))
+                next(reader, None)
+                for row in reader:
+                    if len(row) < 2:
+                        continue
+                    eword = row[0].strip(" \"'.,;:/-*")
+                    hword_raw = row[1].strip(" \"'.,;:")
+                    pos = row[2].strip().lower() if len(row) > 2 else ""
+                    if not eword or not hword_raw or len(eword) > 60:
+                        continue
+                    if not re.search(r"[\u0900-\u097F]", hword_raw):
+                        continue
+                    pos_abbr = {"noun": "n.", "verb": "v.", "adjective": "adj.", "adverb": "adv."}.get(pos, "")
+                    sense = f"<i>{pos_abbr}</i> {html_mod.escape(eword)}" if pos_abbr else html_mod.escape(eword)
+                    for hw in re.split(r"[,;/]", hword_raw):
+                        hw = hw.strip(" .\t\u00a0")
+                        # A gloss of four or more words is an explanation, not a headword.
+                        if 1 <= len(hw) <= 60 and len(hw.split()) <= 3 and re.search(r"[\u0900-\u097F]", hw):
+                            if len(deva_senses[hw]) < 8 and sense not in deva_senses[hw]:
+                                deva_senses[hw].append(sense)
+            except Exception as e:
+                print(f"  [warn] Hindi CSV download error: {e}")
 
         # Download Sanskrit-English unified CSV (Cologne Digital Sanskrit Lexicon: Apte / Monier-Williams / Macdonell)
         sa_csv_url = "https://raw.githubusercontent.com/vkadal/sanskrit-english-dictionary/main/unified_dictionary.csv"
@@ -739,7 +1020,7 @@ def build_devanagari_dictionaries(cache_dir, output_paths, force=False):
                     continue
                 if source not in ("ap90xml", "mdxml", "mwxml"):
                     continue
-                if len(deva_senses[deva]) >= 6:
+                if len(deva_senses[deva]) >= 8:
                     continue
                 prefix = f"<small>[Sanskrit · {html_mod.escape(iast)}]</small> " if iast else "<small>[Sanskrit]</small> "
                 line = prefix + html_mod.escape(gloss[:260])
@@ -752,22 +1033,23 @@ def build_devanagari_dictionaries(cache_dir, output_paths, force=False):
 
         entries = []
         for w in sorted(deva_senses.keys()):
-            senses = deva_senses[w][:6]
+            senses = deva_senses[w][:8]
             defn = senses[0] if len(senses) == 1 else "<ol>" + "".join(f"<li>{s}</li>" for s in senses) + "</ol>"
             item = {"word": w, "definition": defn}
-            al = sorted(deva_aliases.get(w, set()) - {w})[:12]
+            al = sorted(deva_aliases.get(w, set()) - {w})[:48]
             if al:
                 item["aliases"] = al
             entries.append(item)
-            if len(entries) >= 95000:
-                break
+        # No cap: the entries are sorted, so cutting the list at a round number
+        # cut the alphabet — everything from फ to ह was missing.
 
         payload = {
             "format": "gloss-glossary",
             "version": 1,
             "scope": "global",
-            "name": "Devanagari — Hindi & Sanskrit (हिन्दी · संस्कृत)",
-            "language": "hi",
+            "name": ("Devanagari — Sanskrit (संस्कृत)" if PUBLIC
+                     else "Devanagari — Hindi & Sanskrit (हिन्दी · संस्कृत)"),
+            "language": "sa" if PUBLIC else "hi",
             "entries": entries,
         }
         with open(hi_sa_path, "w", encoding="utf-8") as f:
@@ -808,8 +1090,25 @@ def build_devanagari_dictionaries(cache_dir, output_paths, force=False):
                     continue
                 defn = "<br>".join(blocks)
                 ne_entries.append({"word": w, "definition": defn})
-                if len(ne_entries) >= 65000:
-                    break
+
+            if not PUBLIC:
+                # English glosses and inflected forms from Wiktionary (CC BY-SA 4.0).
+                try:
+                    nepali = load_kaikki("Nepali", cache_dir)
+                    by_word = {item["word"]: item for item in ne_entries}
+                    for w, extra in nepali.items():
+                        english = "<small>[English]</small> " + "; ".join(extra["senses"][:4])
+                        if w in by_word:
+                            by_word[w]["definition"] += "<br>" + english
+                        else:
+                            by_word[w] = {"word": w, "definition": english}
+                            ne_entries.append(by_word[w])
+                        forms = sorted(extra["aliases"] - {w})[:48]
+                        if forms:
+                            by_word[w]["aliases"] = sorted(set(by_word[w].get("aliases", [])) | set(forms))[:48]
+                    print(f"  Wiktionary Nepali: {len(nepali):,} headwords")
+                except Exception as e:
+                    print(f"  [warn] Wiktionary Nepali unavailable: {e}")
 
             ne_payload = {
                 "format": "gloss-glossary",
@@ -830,18 +1129,24 @@ def build_devanagari_dictionaries(cache_dir, output_paths, force=False):
 
 def main():
     force = "--force" in sys.argv
+    register = not PUBLIC and "--no-register" not in sys.argv
     os.makedirs(OUT_DIR, exist_ok=True)
+    # A cache the caller named is theirs to keep; only a temporary one is removed.
+    own_cache = not os.environ.get("GLOSS_BUILD_CACHE")
     cache_dir = os.environ.get("GLOSS_BUILD_CACHE") or tempfile.mkdtemp(prefix="gloss-dict-build-")
+    os.makedirs(cache_dir, exist_ok=True)
     try:
         output_paths = []
-        expected_en = [os.path.join(OUT_DIR, f"{cat['id']}.json") for cat in CATEGORIES] + [
-            os.path.join(OUT_DIR, "10-general-english-wordnet.json")
-        ]
-        if not force and all(os.path.exists(p) for p in expected_en):
-            print("English category dictionaries (01–10) already present; skipping rebuild (use --force to rebuild).")
+        wordnet = None
+        expected_en = [os.path.join(OUT_DIR, f"{cat['id']}.json") for cat in CATEGORIES]
+        if PUBLIC:
+            print("Public profile: WordNet, MIT-licensed and Gloss-authored data only.")
+            print("  (The nine subject dictionaries are built from Wikipedia text and are left out.)")
+        elif not force and all(os.path.exists(p) for p in expected_en):
+            print("Subject dictionaries (01–09) already present; skipping rebuild (use --force to rebuild).")
             output_paths.extend(expected_en)
         else:
-            all_pages = sorted({p for cat in CATEGORIES for p in cat["wiki_pages"]})
+            all_pages = sorted({p for cat in CATEGORIES for p in cat["wiki_pages"]} | {ABBREVIATION_PAGE})
             print(f"Fetching {len(all_pages)} Wikipedia academic glossaries...")
             page_html = {}
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
@@ -850,7 +1155,8 @@ def main():
                     p = future_to_page[fut]
                     page_html[p] = fut.result()
 
-            synsets, inflections = load_wordnet(cache_dir)
+            wordnet = load_wordnet(cache_dir)
+            synsets, inflections = wordnet
             print(f"Loaded {len(synsets):,} WordNet 3.0 synsets.")
 
             for cat in CATEGORIES:
@@ -866,6 +1172,16 @@ def main():
                             entries_by_word[w]["aliases"] = sorted(
                                 set(entries_by_word[w]["aliases"]) | set(item["aliases"])
                             )[:24]
+
+                if cat["id"] == "01-computer-science-ai":
+                    for w, item in parse_abbreviation_list(page_html.get(ABBREVIATION_PAGE, "")).items():
+                        if w in entries_by_word:
+                            if item["definition"] not in entries_by_word[w]["definition"]:
+                                entries_by_word[w]["definition"] = (
+                                    f"<b>{item['definition']}</b><hr>" + entries_by_word[w]["definition"]
+                                )
+                        else:
+                            entries_by_word[w] = item
 
                 wiki_count = len(entries_by_word)
 
@@ -941,83 +1257,59 @@ def main():
                 )
                 output_paths.append(out_path)
 
-            print("Building General English Master Dictionary (WordNet 3.0)...")
-            general_senses = defaultdict(list)
-            general_example = {}
-            for ss_key, ss in synsets.items():
-                for w in ss["words"]:
-                    if len(w) > 45 or w.count(" ") > 1:
-                        continue
-                    if len(general_senses[w]) < 4:
-                        general_senses[w].append(f"<i>{ss['pos']}</i> {html_mod.escape(ss['defn'])}")
-                    if ss["example"] and w not in general_example:
-                        general_example[w] = ss["example"]
-
-            general_entries = []
-            for w in sorted(general_senses.keys(), key=lambda s: s.lower()):
-                senses = general_senses[w]
-                defn = (
-                    senses[0]
-                    if len(senses) == 1
-                    else "<ol>" + "".join(f"<li>{s}</li>" for s in senses) + "</ol>"
-                )
-                aliases = sorted(inflections.get(w, set()) - {w})[:12]
-                item = {"word": w, "definition": defn}
-                if aliases:
-                    item["aliases"] = aliases
-                if w in general_example:
-                    item["example"] = general_example[w]
-                general_entries.append(item)
-
-            gen_path = os.path.join(OUT_DIR, "10-general-english-wordnet.json")
-            gen_payload = {
-                "format": "gloss-glossary",
-                "version": 1,
-                "scope": "global",
-                "name": "General English (WordNet 3.0)",
-                "language": "en",
-                "entries": general_entries[:120000],
-            }
-            with open(gen_path, "w", encoding="utf-8") as f:
-                json.dump(gen_payload, f, ensure_ascii=False, separators=(",", ":"))
-            size_mb = os.path.getsize(gen_path) / (1024 * 1024)
-            print(
-                f"  ✓ {'General English (WordNet 3.0)':46s}: {len(gen_payload['entries']):6,d} entries [{size_mb:.2f} MB]"
-            )
-            output_paths.append(gen_path)
-
+        build_general_english(cache_dir, output_paths, force=force, wordnet=wordnet)
+        build_banking_dictionary(output_paths)
         build_devanagari_dictionaries(cache_dir, output_paths, force=force)
 
-        prefs = {}
-        if os.path.exists(PREFS_PATH):
-            try:
-                with open(PREFS_PATH, "r", encoding="utf-8") as f:
-                    prefs = json.load(f)
-            except Exception:
-                prefs = {}
-        existing_order = prefs.get("dictionaries", {}).get("order", [])
-        existing_enabled = prefs.get("dictionaries", {}).get("enabled", {})
-
-        built_in = sorted(
-            os.path.join(OUT_DIR, fn)
-            for fn in os.listdir(OUT_DIR)
-            if fn.endswith(".json") and os.path.isfile(os.path.join(OUT_DIR, fn))
-        )
-        new_order = list(built_in)
-        for p in existing_order:
-            if p not in new_order and os.path.exists(p):
-                new_order.append(p)
-        new_enabled = dict(existing_enabled)
-        for p in built_in:
-            new_enabled[p] = True
-
-        prefs["dictionaries"] = {"order": new_order, "enabled": new_enabled}
-        os.makedirs(os.path.dirname(PREFS_PATH), exist_ok=True)
-        with open(PREFS_PATH, "w", encoding="utf-8") as f:
-            json.dump(prefs, f, indent=2)
-        print(f"Registered {len(new_order)} dictionaries in {PREFS_PATH}")
+        if register:
+            register_dictionaries()
+        else:
+            print(f"Built {len(output_paths)} dictionaries in {OUT_DIR} (not registered).")
     finally:
-        shutil.rmtree(cache_dir, ignore_errors=True)
+        if own_cache:
+            shutil.rmtree(cache_dir, ignore_errors=True)
+
+
+def register_dictionaries():
+    """
+    Add the built files to Gloss's preferences, general English first: a
+    reader who selects "line" wants the everyday meaning before the one from
+    the economics glossary. Dictionaries the reader added themselves keep
+    their place after the built set.
+    """
+    prefs = {}
+    if os.path.exists(PREFS_PATH):
+        try:
+            with open(PREFS_PATH, "r", encoding="utf-8") as f:
+                prefs = json.load(f)
+        except Exception:
+            prefs = {}
+    saved = prefs.get("dictionaries", {})
+    existing_order = saved.get("order", [])
+    existing_enabled = saved.get("enabled", {})
+
+    def priority(path):
+        name = os.path.basename(path)
+        return (0 if name.startswith("10-general-english") else 1, name)
+
+    built_in = sorted(
+        (os.path.join(OUT_DIR, fn) for fn in os.listdir(OUT_DIR)
+         if fn.endswith(".json") and os.path.isfile(os.path.join(OUT_DIR, fn))),
+        key=priority,
+    )
+    new_order = list(built_in)
+    for path in existing_order:
+        if path not in new_order and os.path.exists(path):
+            new_order.append(path)
+    new_enabled = dict(existing_enabled)
+    for path in built_in:
+        new_enabled.setdefault(path, True)   # keep a dictionary the reader switched off, off
+
+    prefs["dictionaries"] = {**saved, "order": new_order, "enabled": new_enabled}
+    os.makedirs(os.path.dirname(PREFS_PATH), exist_ok=True)
+    with open(PREFS_PATH, "w", encoding="utf-8") as f:
+        json.dump(prefs, f, indent=2)
+    print(f"Registered {len(new_order)} dictionaries in {PREFS_PATH}")
 
 
 if __name__ == "__main__":

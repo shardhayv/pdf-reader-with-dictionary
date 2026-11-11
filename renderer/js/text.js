@@ -22,6 +22,9 @@ const LATIN_ONLY = /^[\p{Script=Latin}\p{M}\p{Nd}'’.\-]+$/u;
 
 const MAX_CANDIDATE_LENGTH = 120;
 
+/** Upper bound on the whole ladder (main/dicts.js enforces the same cap). */
+export const MAX_CANDIDATES = 32;
+
 let graphemeSegmenter = null;
 const wordSegmenters = new Map();
 
@@ -80,10 +83,165 @@ export function isLatinToken(text) {
   return text.length > 0 && LATIN_ONLY.test(text) && /\p{Script=Latin}/u.test(text);
 }
 
+// ── Base forms ────────────────────────────────────────────────────────────────
+//
+// Dictionaries list headwords; text is full of inflections. A reader who
+// selects "transactions", "stored" or "नेपालको" should get "transaction",
+// "store" and "नेपाल" — not "No definition found".
+//
+// These functions only *propose* base forms. A proposal counts for nothing
+// unless a dictionary actually has that headword, and every proposal sits
+// below the exact forms in the ladder, so a real entry for the inflected
+// word itself always wins.
+
+/**
+ * English endings, most conservative first: [ending, replacements…].
+ * The order is the point. "uses" must try "use" (drop s) before "us"
+ * (drop es); "using" must try "use" before "us".
+ */
+const ENGLISH_ENDINGS = [
+  ['s', ['']],                      // transactions → transaction, uses → use
+  ['es', ['']],                     // processes → process, boxes → box
+  ['ies', ['y']],                   // policies → policy
+  ['ves', ['f', 'fe']],             // halves → half, knives → knife
+  ['men', ['man']],                 // policemen → policeman
+  ['ied', ['y']],                   // verified → verify
+  ['ed', ['e', '']],                // stored → store, accepted → accept
+  ['ying', ['ie']],                 // lying → lie
+  ['ing', ['e', '']],               // using → use, processing → process
+  ['ier', ['y']],                   // easier → easy
+  ['iest', ['y']],                  // easiest → easy
+  ['er', ['e', '']],                // larger → large, faster → fast
+  ['est', ['e', '']],               // largest → large, fastest → fast
+  ['ily', ['y']],                   // easily → easy
+  ['ally', ['al', '']],             // digitally → digital, basically → basic
+  ['ably', ['able']],               // reliably → reliable
+  ['ibly', ['ible']],               // possibly → possible
+  ['ly', ['']],                     // securely → secure
+  ['iness', ['y']],                 // readiness → ready
+  ['ness', ['']],                   // awareness → aware
+];
+
+/** Endings after which English doubles a final consonant: stopped, running, bigger. */
+const DOUBLING_ENDINGS = new Set(['ed', 'ing', 'er', 'est']);
+const POSSESSIVE = /(?:['’]s|s['’])$/;
+
+/** Plausible base forms of an English word, best guess first. */
+export function englishBaseForms(token) {
+  const word = token.toLocaleLowerCase('en');
+  const out = [];
+  const add = (s) => { if (s.length >= 2 && s !== word && !out.includes(s)) out.push(s); };
+
+  const expand = (w) => {
+    for (const [ending, replacements] of ENGLISH_ENDINGS) {
+      if (w.length <= ending.length + 1 || !w.endsWith(ending)) continue;
+      const stem = w.slice(0, -ending.length);
+      for (const replacement of replacements) {
+        add(stem + replacement);
+        if (replacement === '' && DOUBLING_ENDINGS.has(ending) && /([b-df-hj-np-tv-z])\1$/.test(stem)) {
+          add(stem.slice(0, -1));   // stopped → stopp → stop
+        }
+      }
+    }
+  };
+
+  // "customers'" and "bank's": drop the possessive, then treat what is left
+  // as a word in its own right.
+  if (POSSESSIVE.test(word)) {
+    const owner = word.replace(/['’]s$/, '').replace(/s['’]$/, 's');
+    add(owner);
+    expand(owner);
+  }
+  expand(word);
+  return out.slice(0, 14);
+}
+
+/**
+ * Postpositions and plural markers Nepali writes attached to the word, and
+ * the few Hindi does. Longer, compound markers are listed so that
+ * "देशहरूको" reaches "देश" in one step.
+ */
+const DEVANAGARI_SUFFIXES = [
+  'को', 'का', 'की', 'के', 'ले', 'मा', 'नै', 'में', 'से', 'ने', 'पर',
+  'हरू', 'हरु', 'लाई', 'बाट', 'सँग', 'संग', 'सित', 'तिर', 'देखि', 'सम्म', 'भित्र', 'माथि', 'द्वारा', 'प्रति',
+  'पनि', 'पछि', 'अघि', 'भन्दा', 'जस्तो', 'जस्तै', 'सहित', 'समेत', 'बिना', 'विना', 'अनुसार', 'सम्बन्धी',
+  'हरूको', 'हरूका', 'हरूकी', 'हरूले', 'हरूमा', 'हरुको', 'हरुले', 'हरुमा',
+  'हरूलाई', 'हरूबाट', 'हरूसँग', 'हरुलाई', 'हरुबाट',
+];
+
+/** Hindi plural and oblique endings: [ending, replacement]. */
+const HINDI_ENDINGS = [
+  ['ियों', 'ी'], ['ियाँ', 'ी'], ['ियां', 'ी'],   // लड़कियों, लड़कियाँ → लड़की
+  ['ओं', ''],                                     // महिलाओं → महिला
+  ['ों', ''], ['ों', 'ा'],                         // घरों → घर, लड़कों → लड़का
+  ['ें', ''], ['एँ', ''], ['एं', ''],               // किताबें → किताब, मालाएँ → माला
+  ['े', 'ा'],                                     // लड़के → लड़का
+];
+
+/**
+ * Nepali verb forms back to the dictionary form, which ends in -नु:
+ * [ending, replacement]. Participles and converbs make up a large share of
+ * running Nepali text (गरिएको, राख्ने, बसेर, हुँदा), and none of them is a
+ * headword. More specific endings come first.
+ */
+const NEPALI_VERB_ENDINGS = [
+  ['नुपर्ने', 'नु'], ['नुपर्छ', 'नु'], ['नुहोस्', 'नु'],        // गर्नुपर्ने → गर्नु
+  ['िएको', '्नु'], ['िएका', '्नु'], ['िएकी', '्नु'],             // गरिएको → गर्नु
+  ['इएको', 'उनु'], ['इएका', 'उनु'], ['इएको', 'नु'],             // बनाइएको → बनाउनु, लिइएको → लिनु
+  ['ाएको', 'ाउनु'], ['ाएका', 'ाउनु'], ['ाएर', 'ाउनु'],           // हराएको → हराउनु, मिलाएर → मिलाउनु
+  ['ाउने', 'ाउनु'], ['ाउन', 'ाउनु'], ['ाउँदा', 'ाउनु'], ['ाउँछ', 'ाउनु'],
+  ['एको', 'नु'], ['एका', 'नु'], ['एर', 'नु'], ['एपछि', 'नु'],    // खाएर → खानु, लिएर → लिनु
+  ['ेको', '्नु'], ['ेका', '्नु'], ['ेकी', '्नु'],                // बलेको → बल्नु
+  ['ेर', '्नु'], ['ेपछि', '्नु'],                               // बसेर → बस्नु
+  ['्दाको', '्नु'], ['्दा', '्नु'], ['्दै', '्नु'], ['्दछ', '्नु'],   // झर्दा → झर्नु
+  ['्छन्', '्नु'], ['्छ', '्नु'], ['्थ्यो', '्नु'], ['्यो', '्नु'],   // गर्छ → गर्नु
+  ['ँदाको', 'नु'], ['ँदा', 'नु'], ['ँदै', 'नु'],                 // हुँदा → हुनु
+  ['न्छन्', 'नु'], ['न्छ', 'नु'],                               // हुन्छ → हुनु
+  ['िने', '्नु'],                                               // गरिने → गर्नु
+  ['ने', 'नु'],                                                 // राख्ने → राख्नु
+  ['न', 'नु'],                                                  // राख्न → राख्नु
+];
+
+const VIRAMA = '\u094D';
+
+/** Plausible uninflected forms of a Devanagari word, most conservative first. */
+export function devanagariStems(word) {
+  const out = [];
+  const add = (s) => {
+    // A stem must be a whole word: at least two letters, not cut mid-conjunct.
+    if ([...s].length >= 2 && !s.endsWith(VIRAMA) && s !== word && !out.includes(s)) out.push(s);
+  };
+  for (const suffix of DEVANAGARI_SUFFIXES) {
+    if (word.length <= suffix.length || !word.endsWith(suffix)) continue;
+    const stem = word.slice(0, -suffix.length);
+    add(stem);
+    // Nepali nouns and adjectives in -ो take -ा before a postposition:
+    // टाउकाको is टाउको + को.
+    if (stem.endsWith('ा')) add(`${stem.slice(0, -1)}ो`);
+  }
+
+  const verbForms = (form) => {
+    for (const [ending, replacement] of NEPALI_VERB_ENDINGS) {
+      if (form.length > ending.length && form.endsWith(ending)) add(form.slice(0, -ending.length) + replacement);
+    }
+  };
+  verbForms(word);
+  // The negative is a prefix: नगर्ने is न + गर्ने.
+  if (word.startsWith('न') && [...word].length > 3) verbForms(word.slice(1));
+
+  for (const [ending, replacement] of HINDI_ENDINGS) {
+    if (word.length > ending.length && word.endsWith(ending)) add(word.slice(0, -ending.length) + replacement);
+  }
+  // Plural and oblique of a Nepali word in -ो: मसिना → मसिनो.
+  if (word.endsWith('ा')) add(`${word.slice(0, -1)}ो`);
+  return out.slice(0, 14);
+}
+
 /**
  * Deterministic lookup-candidate ladder.
  * Order: exact → NFC → edge-trimmed → script-appropriate variants →
- * Latin case variants. Deduplicated, empty and oversize entries dropped.
+ * Latin case variants → base forms of an inflected word. Deduplicated,
+ * empty and oversize entries dropped.
  * The original selection is never mutated by callers — candidates are
  * for lookup only; copying must always reproduce the source text.
  */
@@ -121,7 +279,33 @@ export function lookupCandidates(rawSelection) {
     push(trimmed.toLocaleUpperCase('en'));
   }
 
-  return out;
+  // Base forms, for single words only — a phrase is looked up as written.
+  if (!/\s/.test(trimmed)) {
+    if (isLatinToken(trimmed)) {
+      if (trimmed.includes('-')) {
+        // "real-time", "state-owned": dictionaries spell compounds every way.
+        const parts = trimmed.split('-').filter(Boolean);
+        push(parts.join(' '));
+        push(parts.join(''));
+        push(parts.join(' ').toLocaleLowerCase('en'));
+        push(parts.join('').toLocaleLowerCase('en'));
+      }
+      if (POSSESSIVE.test(trimmed)) push(trimmed.replace(/['’]s$/, '').replace(/s['’]$/, 's'));
+      for (const base of englishBaseForms(trimmed)) push(base);
+      if (trimmed.includes('-')) {
+        // Last resort for a compound nobody lists: its head word, then the rest.
+        const parts = trimmed.toLocaleLowerCase('en').split('-').filter(part => part.length >= 3);
+        for (const part of [...parts].reverse()) {
+          push(part);
+          for (const base of englishBaseForms(part).slice(0, 2)) push(base);
+        }
+      }
+    } else if (hasDevanagari(trimmed)) {
+      for (const stem of devanagariStems(trimmed)) push(stem);
+    }
+  }
+
+  return out.slice(0, MAX_CANDIDATES);
 }
 
 /**

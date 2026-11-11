@@ -35,6 +35,7 @@
   },
   "license": "AGPL-3.0-only",
   "main": "main.js",
+  "desktopName": "gloss.desktop",
   "scripts": {
     "start": "electron .",
     "lint": "eslint .",
@@ -44,6 +45,7 @@
     "fixtures": "node scripts/make-fixtures.js",
     "glossary": "node scripts/make-glossary.js",
     "dictionaries": "python3 scripts/download-dictionaries.py",
+    "dictionaries:bundle": "python3 scripts/download-dictionaries.py --public --force --out bundled-dictionaries",
     "icons": "electron scripts/make-icons.js",
     "dist": "electron-builder --linux",
     "dist:dir": "electron-builder --linux dir",
@@ -80,7 +82,14 @@
       "about.js",
       "main/**/*",
       "renderer/**/*",
-      "assets/**/*"
+      "assets/**/*",
+      "!node_modules/@napi-rs/**",
+      "!node_modules/pdfjs-dist/legacy/**",
+      "!node_modules/pdfjs-dist/web/**",
+      "!node_modules/pdfjs-dist/types/**",
+      "!node_modules/pdfjs-dist/image_decoders/**",
+      "!node_modules/pdfjs-dist/**/*.map",
+      "!node_modules/pdfjs-dist/build/*.min.mjs"
     ],
     "asarUnpack": [
       "node_modules/pdfjs-dist/**"
@@ -124,7 +133,7 @@
       "icon": "build/icons",
       "category": "Office;Viewer",
       "synopsis": "PDF reader with instant dictionary lookup",
-      "description": "Gloss is a quiet English and Devanagari PDF reader for people who read to understand. Select a word or phrase for an immediate definition from bundled offline dictionaries, your own MDX dictionaries, a per-book JSON glossary, Wiktionary, or Wikipedia.",
+      "description": "Gloss is a quiet English and Devanagari PDF reader for people who read to understand. Select a word or phrase for an immediate definition from the bundled offline dictionaries, your own MDX dictionaries, a per-book JSON glossary, Wiktionary, or Wikipedia.",
       "desktop": {
         "entry": {
           "StartupWMClass": "Gloss",

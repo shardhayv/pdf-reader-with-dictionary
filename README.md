@@ -21,9 +21,9 @@ Created and maintained by **[Shardhay Vatshyayan](https://github.com/shardhayv)*
 
 Gloss is a desktop PDF reader built around one idea: when you don't know a word,
 looking it up should take one gesture, not ten. Select any word and a definition
-appears next to it — from **twelve offline dictionaries that ship with the
-release builds**, **your own MDX dictionaries**, and **Wiktionary** and
-**Wikipedia** as optional online fallbacks. For each book, Gloss can also use a
+appears next to it — from **offline dictionaries that ship with the release
+builds**, **your own MDX dictionaries**, and **Wiktionary** and **Wikipedia**
+as optional online fallbacks. For each book, Gloss can also use a
 small **AI-assisted JSON glossary** containing the names, coined words, and
 context-specific meanings that no general dictionary knows.
 
@@ -55,7 +55,8 @@ are no accounts, no telemetry, and no analytics.
 |---|---|
 | **Instant lookup** | Select a word or short phrase; the definition appears without covering the line you're reading |
 | **Latin and Devanagari** | Unicode-aware selection, search, and lookup that never split a conjunct or drop a matra |
-| **Offline from first launch** | Release builds include 12 dictionaries (about 361,000 entries): nine subject areas, general English, Hindi & Sanskrit, and Nepali |
+| **Offline from first launch** | Release builds include four dictionaries, about 315,000 entries: general English (all of WordNet plus everyday and computing words), Sanskrit, Nepali, and banking abbreviations |
+| **Finds the word you actually selected** | Text is full of inflections; dictionaries list base forms. *transactions*, *stored*, *RBB's*, *नेपालको* and *गरिएको* resolve to *transaction*, *store*, *RBB*, *नेपाल* and *गर्नु* |
 | **Your dictionaries** | Load any number of `.mdx` files without freezing the reader, set their priority, toggle them per lookup |
 | **Sources at a glance** | One toolbar button shows how many sources are on and opens a checklist to switch any of them — it scales to any number of dictionaries |
 | **Per-book glossaries** | Build an AI-assisted JSON glossary for one PDF; it activates automatically only for that book |
@@ -133,11 +134,24 @@ Prebuilt releases for Linux and Windows are on the [GitHub Releases](https://git
 | `Gloss-2.5.0-Setup.exe` | Windows x64 | Installer with Start Menu and desktop shortcuts and PDF file association |
 | `Gloss-2.5.0-Portable.exe` | Windows x64 | Single file, no installation — runs from a USB stick |
 
-All three include the 12 offline dictionaries, so lookups work the moment the
-app opens. That data is why the downloads are 120–150 MB: the reader itself is
-about 60 MB, the dictionaries add roughly 64 MB. Their sources and licences
-are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and shipped
-beside them as `resources/dictionaries/NOTICES.txt`.
+All three include the same four offline dictionaries (about 315,000 entries,
+58 MB), so lookups work the moment the app opens:
+
+| Dictionary | Entries | Source |
+|---|---:|---|
+| General English | 139,000 | WordNet 3.0, plus everyday words (*the, of, with*) and computing terms written for Gloss |
+| Devanagari — Sanskrit | 52,000 | Cologne lexicons (Apte, Macdonell, Monier-Williams), MIT-licensed compilation |
+| Devanagari — Nepali Shabdakosh | 123,000 | Nepali Brihat Shabdakosh open dataset, MIT |
+| Banking & Finance Abbreviations | 51 | written for Gloss |
+
+Measured on a 42-page set of banking-IT study notes (14,260 words), 96.5% of
+the words a reader could select get a definition offline from this set; the
+rest are names, URLs and codes, which the online tiers cover. On Nepali
+running text the figure is about 89%.
+
+Release packages contain **no Creative Commons-licensed text and no
+unlicensed data** — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); the
+notices also ship beside the files as `resources/dictionaries/NOTICES.txt`.
 
 Any bundled dictionary can be switched off from the toolbar's **Sources**
 menu or removed in **Preferences → Dictionaries**; a removed dictionary stays
@@ -153,8 +167,9 @@ npm run dist:appimage   # AppImage only
 npm run dist            # AppImage + .deb
 
 # The offline dictionaries are packaged from bundled-dictionaries/ (not in
-# Git). Build them once with `npm run dictionaries` and copy the JSON files
-# there; without that folder the packages are simply built without them.
+# Git). Build that folder once — redistributable sources only:
+npm run dictionaries:bundle
+# Without it the packages are simply built without dictionaries.
 
 # Windows (builds on Linux via Wine/makensis or natively on Windows)
 npm run dist:win        # Both NSIS installer and Portable .exe
@@ -189,21 +204,28 @@ for Ubuntu and Debian.
    pass a path on the command line, or open it from your file manager.
 2. **Choose your sources** — the **Sources** button in the toolbar shows how
    many lookup sources are on; click it to switch any dictionary, Wiktionary
-   or Wikipedia on or off. Release builds start with the 12 bundled
-   dictionaries already there.
+   or Wikipedia on or off. Release builds start with the four bundled
+   dictionaries already there, general English first.
 
    To add your own, use Preferences → Dictionaries → *Add dictionaries…* and
    pick one or more lawfully obtained `.mdx` files or global `.json`
    glossaries. Open, public-domain, and personally licensed dictionaries can
    all be used.
 
-   Running from source, the bundled set is not in the repository. Build and
-   register it (about 361,000 entries: nine subject areas, general English,
-   Hindi & Sanskrit, and Nepali) with:
+   **A bigger shelf for your own machine.** From a source checkout,
 
    ```bash
    npm run dictionaries
    ```
+
+   builds and registers thirteen dictionaries, about 506,000 entries: the
+   four above plus nine subject dictionaries (computer science, philosophy,
+   economics, law, history, biology and medicine, chemistry, mathematics and
+   physics, psychology and literature), 1,700 computing abbreviations, Hindi,
+   and English glosses for Nepali. That set draws on Wikipedia and Wiktionary
+   (CC BY-SA) and one Hindi word list with no published licence — fine to use
+   yourself, **not** to redistribute, which is why release packages do not
+   carry it.
 
    You can also add a **per-book glossary** — a small JSON file for the words a
    general dictionary cannot help with. Build a draft from the book itself:
@@ -352,7 +374,7 @@ pdf-reader-with-dictionary/
 ├── about.html/.css/.js      # about window
 ├── assets/icon.png
 ├── build/                   # packaging: deb scripts, icon, dictionary notices
-├── scripts/                 # glossary builder, fixtures, visual/perf tools
+├── scripts/                 # dictionary and glossary builders, fixtures, visual/perf tools
 ├── test/unit/               # node:test suites
 ├── test/e2e/                # Playwright + Electron suites
 ├── docs/                    # architecture, glossary and testing notes
@@ -412,10 +434,11 @@ Runtime and development dependencies retain their own licenses; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 The AGPL covers the program. The offline dictionaries shipped in release
-packages are separate data under their own terms — CC BY-SA 4.0 (Wikipedia),
-the WordNet licence, and MIT, with one source that publishes no licence; the
-details are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The source
-repository itself contains no dictionary data.
+packages are separate data under their own terms — the WordNet licence and
+MIT, plus entries written for Gloss — with nothing CC-licensed and nothing
+unlicensed; the details are in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The source repository
+itself contains no third-party dictionary data.
 
 Every dictionary, bundled or yours, is treated as untrusted input: definitions
 are sanitized before display and can never navigate the app or reach the

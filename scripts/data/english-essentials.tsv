@@ -1,0 +1,252 @@
+# Everyday English that WordNet does not define: articles, pronouns,
+# prepositions, conjunctions, auxiliaries, contractions, abbreviations.
+# Written for Gloss (same licence as the repository). Tab-separated:
+#   word <TAB> part of speech <TAB> definition <TAB> alias|alias…
+# scripts/download-dictionaries.py puts these FIRST in the general English
+# entry for each word, ahead of any WordNet senses ("in" is a preposition
+# before it is an abbreviation for inch).
+a	determiner	Used before a noun to refer to one of something that has not been mentioned before, or to any member of a group: a book, a problem.	
+an	determiner	The form of "a" used before a vowel sound: an hour, an error.	
+the	determiner	Used before a noun to show that a particular, already known or unique thing is meant: the book on the table, the sun.	
+this	determiner, pronoun	The person, thing or idea that is near, present, or has just been mentioned.	
+that	determiner, pronoun, conjunction	1. The person or thing further away or already mentioned. 2. Introduces a clause: she said that it works. 3. Which or who: the file that I saved.	
+these	determiner, pronoun	Plural of "this": the people or things here or just mentioned.	
+those	determiner, pronoun	Plural of "that": the people or things further away or already mentioned.	
+some	determiner, pronoun	An amount or number that is not stated exactly; a part but not all.	
+any	determiner, pronoun	One or some, no matter which; used mainly in questions and negatives: any questions?	
+no	determiner, adverb	Not any; not one. Also the negative reply, the opposite of "yes".	
+every	determiner	Each one of a group without exception: every page, every day.	
+each	determiner, pronoun	Every one of two or more people or things, considered separately.	
+either	determiner, pronoun, conjunction	One or the other of two. With "or", introduces the first of two alternatives: either now or later.	
+neither	determiner, pronoun, conjunction	Not one and not the other of two. With "nor": neither fast nor cheap.	
+both	determiner, pronoun	The two together; the one as well as the other.	
+all	determiner, pronoun	The whole quantity or every one of; everything or everyone.	
+another	determiner, pronoun	One more of the same kind; a different one.	
+other	determiner, pronoun	Different from the one already mentioned; the remaining one or ones.	others
+such	determiner, pronoun	Of the kind just described; so great or so much: such a result.	
+much	determiner, adverb	A large amount of; to a great degree. Used with uncountable nouns: much time.	
+many	determiner, pronoun	A large number of. Used with countable nouns: many users.	
+few	determiner, pronoun	Not many; a small number of.	
+several	determiner, pronoun	More than two but not many.	
+most	determiner, adverb	The greatest amount or number; nearly all. Forms the superlative: most useful.	
+more	determiner, adverb	A greater amount or number. Forms the comparative: more secure.	
+less	determiner, adverb	A smaller amount of; to a smaller degree.	
+enough	determiner, adverb	As much or as many as is needed.	
+own	determiner	Belonging to the person mentioned and to nobody else: its own address.	
+same	determiner, pronoun	Not different; identical to the one mentioned.	
+what	pronoun, determiner	Asks for information about something: what is a protocol? Also: the thing or things that — show me what you found.	
+which	pronoun, determiner	Asks for a choice from a known set: which port? Also introduces a clause about a thing just mentioned: the key, which is secret.	
+whose	determiner, pronoun	Belonging to which person or thing: the user whose account was locked.	
+whatever	pronoun, determiner	Anything or everything that; no matter what.	
+whichever	pronoun, determiner	Any one that; no matter which.	
+I	pronoun	The speaker or writer, as the subject of a verb.	
+me	pronoun	The speaker or writer, as the object of a verb or preposition.	
+my	determiner	Belonging to the speaker or writer.	
+mine	pronoun	The one or ones belonging to the speaker or writer.	
+myself	pronoun	The speaker or writer as the object of their own action; also used for emphasis.	
+you	pronoun	The person or people being spoken or written to.	
+your	determiner	Belonging to the person or people being addressed.	
+yours	pronoun	The one or ones belonging to the person or people being addressed.	
+yourself	pronoun	The person addressed, as the object of their own action; also used for emphasis.	yourselves
+he	pronoun	The male person or animal already mentioned, as subject.	
+him	pronoun	The male person or animal already mentioned, as object.	
+his	determiner, pronoun	Belonging to the male person already mentioned.	
+himself	pronoun	The male person mentioned, as the object of his own action; also for emphasis.	
+she	pronoun	The female person or animal already mentioned, as subject.	
+her	pronoun, determiner	The female person already mentioned, as object; also belonging to her.	
+hers	pronoun	The one or ones belonging to the female person already mentioned.	
+herself	pronoun	The female person mentioned, as the object of her own action; also for emphasis.	
+it	pronoun	The thing, animal, idea or situation already mentioned; also an empty subject: it is raining.	
+its	determiner	Belonging to the thing or animal already mentioned: the bank and its customers. (Not "it's", which means "it is".)	
+itself	pronoun	The thing mentioned, as the object of its own action; also for emphasis.	
+we	pronoun	The speaker or writer together with one or more other people, as subject.	
+us	pronoun	The speaker or writer together with others, as object.	
+our	determiner	Belonging to the speaker or writer and others.	
+ours	pronoun	The one or ones belonging to us.	
+ourselves	pronoun	Us, as the object of our own action; also for emphasis.	
+they	pronoun	The people, animals or things already mentioned, as subject; also used for one person whose gender is not stated.	
+them	pronoun	The people, animals or things already mentioned, as object.	
+their	determiner	Belonging to the people or things already mentioned: customers and their accounts.	
+theirs	pronoun	The one or ones belonging to them.	
+themselves	pronoun	Them, as the object of their own action; also for emphasis.	
+who	pronoun	Asks which person or people; also introduces a clause about a person: the officer who approved it.	
+whom	pronoun	The object form of "who": to whom it was sent.	
+whoever	pronoun	Any person who; no matter who.	
+someone	pronoun	A person who is not known or not named.	somebody
+something	pronoun	A thing that is not known or not named.	
+anyone	pronoun	Any person at all.	anybody
+anything	pronoun	Any thing at all.	
+everyone	pronoun	Every person.	everybody
+everything	pronoun	All things; the whole of a situation.	
+nobody	pronoun	Not any person.	no one
+nothing	pronoun	Not any thing.	
+none	pronoun	Not one; not any.	
+oneself	pronoun	A person's own self, as the object of their own action.	
+of	preposition	1. Belonging to or connected with: the name of the file. 2. Made from or containing: a set of rules. 3. Showing a part or amount: one of them.	
+in	preposition, adverb	1. Inside or within a place, thing or period: in memory, in 2024. 2. Using a form or language: in binary.	
+on	preposition, adverb	1. Touching and supported by a surface: on the desk. 2. About: a book on networks. 3. At a time or day: on Monday. 4. Operating: the device is on.	
+at	preposition	Shows an exact place, time, rate or state: at the branch, at noon, at 5 percent.	
+to	preposition, particle	1. In the direction of, or as far as: send it to the server. 2. Marks the person or thing affected: give it to them. 3. Marks the infinitive of a verb: to read.	
+for	preposition, conjunction	1. Intended to be given to or used by: a card for customers. 2. In order to get or do: for security. 3. During: for two years. 4. Because (formal).	
+with	preposition	1. Together or in company of. 2. Using: sign with a key. 3. Having: a card with a chip.	
+by	preposition, adverb	1. Shows who or what does something: approved by the manager. 2. Using a method: pay by card. 3. Not later than: by Friday. 4. Next to.	
+from	preposition	Shows the starting point, source or cause: from the bank, from 9 to 5, made from steel.	
+into	preposition	To the inside of; to a new state or form: converted into binary, deposited into the account.	
+onto	preposition	To a position on the surface of.	
+upon	preposition	On (formal); immediately after: upon request.	
+about	preposition, adverb	1. On the subject of. 2. Approximately: about ten.	
+above	preposition, adverb	At or to a higher place or level than.	
+across	preposition, adverb	From one side to the other of; on the other side of.	
+after	preposition, conjunction, adverb	Later than; following in time or order.	
+against	preposition	1. In opposition to. 2. Touching or pressing on. 3. As protection from: insurance against loss.	
+along	preposition, adverb	From one end towards the other of; together with.	
+among	preposition	In the middle of or included in a group of three or more.	amongst
+around	preposition, adverb	On every side of; in a circle; approximately.	
+as	conjunction, preposition, adverb	1. In the role of: works as a cashier. 2. While or because. 3. To the same degree: as fast as.	
+before	preposition, conjunction, adverb	Earlier than; in front of.	
+behind	preposition, adverb	At or to the back of; later or slower than.	
+below	preposition, adverb	At or to a lower place or level than.	
+beneath	preposition, adverb	Under; lower than.	
+beside	preposition	Next to; at the side of.	
+besides	preposition, adverb	In addition to; apart from; also.	
+between	preposition, adverb	In the space, time or range that separates two things; shared by two.	
+beyond	preposition, adverb	On the far side of; more than; outside the limits of.	
+but	conjunction, preposition	1. Joins two contrasting ideas: fast but costly. 2. Except: nothing but zeros.	
+despite	preposition	Without being affected or prevented by: despite the error.	
+down	preposition, adverb	To or at a lower place; not working: the server is down.	
+during	preposition	All through a period of time, or at some point in it.	
+except	preposition, conjunction	Not including; other than.	
+inside	preposition, adverb	In or into the inner part of.	
+like	preposition, conjunction	Similar to; in the same way as; for example.	
+near	preposition, adverb	Close to; not far from.	
+off	preposition, adverb	Away from; not on or not operating: turn the device off.	
+out	adverb, preposition	Away from the inside of; not in; no longer available.	
+outside	preposition, adverb	Not in; on or to the outer part of.	
+over	preposition, adverb	Above; more than; across; finished.	
+past	preposition, adverb	Beyond in place or time; later than.	
+per	preposition	For each: interest of 10 percent per year, bits per second.	
+since	preposition, conjunction, adverb	1. From a past time until now: since 2020. 2. Because: since it is encrypted.	
+than	conjunction, preposition	Used after a comparative to introduce the second thing compared: faster than disk.	
+through	preposition, adverb	From one side or end to the other of; by means of: paid through the app.	
+throughout	preposition, adverb	In every part of; during the whole of.	
+till	preposition, conjunction	Until; up to the time of.	
+toward	preposition	In the direction of; in relation to.	towards
+under	preposition, adverb	Below; less than; controlled or covered by.	
+underneath	preposition, adverb	Directly below or covered by.	
+unlike	preposition	Different from; not typical of.	
+until	preposition, conjunction	Up to the time that; before.	
+up	adverb, preposition	To or at a higher place or level; working: the system is up.	
+via	preposition	By way of; by means of: sent via email.	
+within	preposition, adverb	Inside the limits of a place, time or range: within 24 hours.	
+without	preposition	Not having, using or doing: without a password.	
+versus	preposition	Against; compared with. Abbreviated "vs".	vs|vs.
+regarding	preposition	About; on the subject of.	
+concerning	preposition	About; on the subject of.	
+including	preposition	Having as a part; and also.	
+and	conjunction	Joins words, phrases or clauses that are to be taken together: input and output.	
+or	conjunction	Joins alternatives: cash or card. Also introduces an explanation: RAM, or main memory.	
+nor	conjunction	And not; used after "neither" or another negative.	
+yet	conjunction, adverb	1. But; in spite of that. 2. Up to now: not yet finished.	
+so	conjunction, adverb	1. Therefore; for that reason. 2. To such a degree: so fast. 3. In that way.	
+because	conjunction	For the reason that.	
+although	conjunction	In spite of the fact that; but.	though
+while	conjunction	1. During the time that. 2. Although; whereas.	whilst
+whereas	conjunction	Used to contrast two facts: RAM is volatile, whereas ROM is not.	
+if	conjunction	On the condition that; supposing that; whether.	
+unless	conjunction	Except if; if not.	
+whether	conjunction	Shows a choice or doubt between alternatives: whether it is valid or not.	
+when	adverb, conjunction	At what time; at or during the time that.	
+whenever	conjunction, adverb	At any time that; every time that.	
+where	adverb, conjunction	At, in or to what place; in the place or situation that.	
+wherever	conjunction, adverb	In or to any place that.	
+once	adverb, conjunction	1. One time only. 2. At some time in the past. 3. As soon as: once it is verified.	
+hence	adverb	For this reason; therefore.	
+thus	adverb	In this way; as a result.	
+therefore	adverb	For that reason; consequently.	
+however	adverb	1. But; nevertheless. 2. To whatever degree: however large.	
+moreover	adverb	In addition; what is more.	furthermore
+nevertheless	adverb	In spite of that; even so.	nonetheless
+otherwise	adverb	If not; in a different way; apart from that.	
+meanwhile	adverb	In the time between two events; at the same time.	
+instead	adverb	In place of something else.	
+also	adverb	In addition; too.	
+too	adverb	1. Also; as well. 2. More than is wanted or needed: too slow.	
+how	adverb	In what way; by what means; to what extent: how it works, how many.	
+why	adverb	For what reason or purpose.	
+here	adverb	In, at or to this place or point.	
+there	adverb, pronoun	In, at or to that place. Also introduces a statement that something exists: there are two types.	
+then	adverb	At that time; next; in that case.	
+now	adverb	At the present time; immediately.	
+not	adverb	Makes a word, phrase or sentence negative.	n't
+very	adverb, adjective	To a high degree: very fast. As an adjective: exact — the very same.	
+be	verb	1. To exist or happen. 2. Links a subject to a description: the data is safe. 3. Forms continuous tenses (is running) and the passive (was sent).	
+am	verb	First person singular present of "be": I am.	
+is	verb	Third person singular present of "be": it is.	
+are	verb	Present of "be" used with you, we and they.	
+was	verb	Past of "be" used with I, he, she and it.	
+were	verb	Past of "be" used with you, we and they; also used for unreal conditions: if it were true.	
+been	verb	Past participle of "be": has been approved.	
+being	verb, noun	Present participle of "be": is being processed. As a noun: existence; a living creature.	
+have	verb	1. To own, hold or contain. 2. Forms the perfect tenses: have finished. 3. "Have to": must.	
+has	verb	Third person singular present of "have".	
+had	verb	Past tense and past participle of "have".	
+having	verb	Present participle of "have".	
+do	verb	1. To perform or carry out an action. 2. Forms questions and negatives: do not open it. 3. Adds emphasis.	
+does	verb	Third person singular present of "do".	
+did	verb	Past tense of "do": performed, carried out.	
+done	verb, adjective	Past participle of "do"; finished, completed.	
+doing	verb	Present participle of "do".	
+will	modal verb	1. Shows the future: it will expire. 2. Shows willingness or a habit. (As a noun: determination; a legal document about property after death.)	
+would	modal verb	1. Past of "will". 2. Shows a possible or imagined result: it would fail. 3. Makes a polite request.	
+shall	modal verb	1. Shows the future with I and we (formal). 2. In rules and contracts: must — the bank shall notify the customer.	
+should	modal verb	1. Shows what is right, advised or expected: you should back up data. 2. Shows probability.	
+can	modal verb	1. To be able to. 2. To be allowed to. 3. Shows possibility. (As a noun: a metal container.)	
+could	modal verb	1. Past of "can". 2. Shows possibility: it could fail. 3. Makes a polite request.	
+may	modal verb	1. Shows possibility: it may take a day. 2. Shows permission (formal).	
+might	modal verb	Shows a weaker possibility than "may"; also the past of "may".	
+must	modal verb	1. Shows necessity or obligation: you must sign. 2. Shows a logical conclusion: it must be correct.	
+ought	modal verb	"Ought to": shows duty, advice or probability; similar to "should".	
+cannot	modal verb	The negative of "can": not able or not allowed to.	can't
+won't	contraction	Will not; refuses or is not going to.	
+wouldn't	contraction	Would not.	
+shouldn't	contraction	Should not.	
+couldn't	contraction	Could not.	
+mustn't	contraction	Must not; is forbidden to.	
+don't	contraction	Do not.	
+doesn't	contraction	Does not.	
+didn't	contraction	Did not.	
+isn't	contraction	Is not.	
+aren't	contraction	Are not.	
+wasn't	contraction	Was not.	
+weren't	contraction	Were not.	
+hasn't	contraction	Has not.	
+haven't	contraction	Have not.	
+hadn't	contraction	Had not.	
+it's	contraction	It is, or it has. (The possessive is "its", without an apostrophe.)	
+that's	contraction	That is, or that has.	
+there's	contraction	There is, or there has.	
+what's	contraction	What is, or what has.	
+let's	contraction	Let us; used to suggest doing something together.	
+I'm	contraction	I am.	
+I've	contraction	I have.	
+I'll	contraction	I will.	
+I'd	contraction	I would, or I had.	
+you're	contraction	You are.	
+you've	contraction	You have.	
+you'll	contraction	You will.	
+we're	contraction	We are.	
+we've	contraction	We have.	
+we'll	contraction	We will.	
+they're	contraction	They are.	
+they've	contraction	They have.	
+they'll	contraction	They will.	
+he's	contraction	He is, or he has.	
+she's	contraction	She is, or she has.	
+e.g.	abbreviation	For example (Latin "exempli gratia"). Introduces one or more examples.	e.g|eg
+i.e.	abbreviation	That is; in other words (Latin "id est"). Introduces a restatement.	i.e|ie
+etc.	abbreviation	And so on; and other similar things (Latin "et cetera").	etc|et cetera
+viz.	abbreviation	Namely; that is to say (Latin "videlicet").	viz
+cf.	abbreviation	Compare (Latin "confer"). Points the reader to something for comparison.	cf
+et al.	abbreviation	And others (Latin "et alii"). Used after the first of several authors.	et al
+a.m.	abbreviation	Before noon (Latin "ante meridiem").	a.m
+p.m.	abbreviation	After noon (Latin "post meridiem").	p.m

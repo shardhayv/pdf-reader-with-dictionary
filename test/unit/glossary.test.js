@@ -213,3 +213,24 @@ test('isGlossaryPath distinguishes glossaries from MDX', () => {
   assert.equal(isGlossaryPath('/books/a.mdx'), false);
   assert.equal(isGlossaryPath('/books/a.json.mdx'), false);
 });
+
+test('an alias never hides a real headword, whatever the order in the file', () => {
+  // "saw" is listed as a form of "see" *before* the entry for the tool.
+  const g = new Glossary(write({
+    entries: [
+      define('see', 'to perceive with the eyes', { aliases: ['saw', 'seen', 'sees'] }),
+      define('saw', 'a tool with a toothed blade'),
+    ],
+  }));
+  assert.equal(g.lookup('saw').definition, 'a tool with a toothed blade');
+  assert.equal(g.lookup('saw').keyText, 'saw');
+  // Forms with no entry of their own still lead to the base word.
+  assert.equal(g.lookup('seen').keyText, 'see');
+  assert.equal(g.lookup('sees').keyText, 'see');
+});
+
+test('inflected forms beyond the old 24-alias limit are indexed', () => {
+  const forms = Array.from({ length: 40 }, (_, i) => `form${i}`);
+  const g = new Glossary(write({ entries: [define('verb', 'a doing word', { aliases: forms })] }));
+  assert.equal(g.lookup('form39').keyText, 'verb');
+});
