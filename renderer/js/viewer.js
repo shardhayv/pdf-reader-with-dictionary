@@ -35,6 +35,8 @@ const state = {
   zoomMode: 'fit-width',
   zoomScale: 1,
   rotation: 0,      // 0 | 90 | 180 | 270 user rotation offset
+  spreadMode: 'single', // 'single' | 'two-page'
+  bookmarks: new Set(), // 1-based bookmarked page numbers for current document
   rawBaseWidth: 612,
   rawBaseHeight: 792,
   baseWidth: 612,   // page 1 at scale 1 (US Letter fallback)
@@ -72,6 +74,9 @@ export const currentPage = () => state.current;
 export const zoomMode = () => state.zoomMode;
 export const zoomScale = () => state.zoomScale;
 export const rotation = () => state.rotation;
+export const spreadMode = () => state.spreadMode;
+export const bookmarks = () => [...state.bookmarks].sort((a, b) => a - b);
+export const isBookmarked = (n = state.current) => state.bookmarks.has(n);
 export const canGoBack = () => state.historyBack.length > 0;
 export const canGoForward = () => state.historyForward.length > 0;
 
@@ -90,7 +95,9 @@ function dimsFor(n) {
 function computeFitScale(mode) {
   const container = refs.container();
   const availW = Math.max(120, container.clientWidth - PAGE_HORIZONTAL_MARGIN);
-  const widthScale = availW / state.baseWidth;
+  const cols = state.spreadMode === 'two-page' && state.total > 1 ? 2 : 1;
+  const colGap = cols === 2 ? 16 : 0;
+  const widthScale = Math.max(60, availW - colGap) / (state.baseWidth * cols);
   if (mode === 'fit-page') {
     const availH = Math.max(120, container.clientHeight - 40);
     return Math.min(widthScale, availH / state.baseHeight);
@@ -231,11 +238,12 @@ function setupObservers() {
 
   state.lazyObserver = new IntersectionObserver((entries) => {
     let nearest = null;
+    const buffer = state.spreadMode === 'two-page' ? RENDER_BUFFER * 2 : RENDER_BUFFER;
     for (const entry of entries) {
       if (!entry.isIntersecting) continue;
       const n = Number(entry.target.dataset.pageNumber);
       nearest = nearest === null ? n : Math.min(nearest, n);
-      for (let i = n - RENDER_BUFFER; i <= n + RENDER_BUFFER; i++) {
+      for (let i = n - buffer; i <= n + buffer; i++) {
         if (i >= 1 && i <= state.total) renderPage(i);
       }
     }
@@ -381,9 +389,10 @@ function rerenderPage(n) {
 }
 
 function destroyFarPages(nearPage) {
+  const maxDist = state.spreadMode === 'two-page' ? DESTROY_DISTANCE * 2 : DESTROY_DISTANCE;
   for (const wrapper of refs.pages().querySelectorAll('.pdf-page-wrapper[data-rendered="true"]')) {
     const n = Number(wrapper.dataset.pageNumber);
-    if (Math.abs(n - nearPage) > DESTROY_DISTANCE) destroyPage(wrapper);
+    if (Math.abs(n - nearPage) > maxDist) destroyPage(wrapper);
   }
 }
 
@@ -593,6 +602,57 @@ export function rotateBy(deltaDegrees) {
   setRotation(state.rotation + deltaDegrees);
 }
 
+/** Switch between single-page column and two-page book spread layout. */
+export function setSpreadMode(mode) {
+  if (!state.doc) return;
+  const next = mode === 'two-page' ? 'two-page' : 'single';
+  if (next === state.spreadMode) return;
+  const pageBefore = state.current;
+  state.spreadMode = next;
+  refs.pages().classList.toggle('pages--spread', next === 'two-page');
+  if (state.zoomMode === 'fit-width' || state.zoomMode === 'fit-page') {
+    state.zoomScale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, computeFitScale(state.zoomMode)));
+    for (const wrapper of refs.pages().children) {
+      const n = Number(wrapper.dataset.pageNumber);
+      if (wrapper.dataset.rendered === 'true') destroyPage(wrapper);
+      sizeWrapper(wrapper, n);
+    }
+  }
+  goToPage(pageBefore, { instant: true, recordHistory: false });
+  const span = next === 'two-page' ? 2 : 1;
+  for (let i = Math.max(1, pageBefore - span); i <= Math.min(state.total, pageBefore + span); i++) {
+    renderPage(i);
+  }
+  emit('spreadchanged', state.spreadMode);
+  emit('zoomchanged', { mode: state.zoomMode, scale: state.zoomScale });
+}
+
+export function toggleSpreadMode() {
+  setSpreadMode(state.spreadMode === 'two-page' ? 'single' : 'two-page');
+}
+
+/** Toggle or remove a page bookmark on the current document. */
+export function toggleBookmark(n = state.current) {
+  if (!state.doc) return false;
+  const target = Math.min(state.total, Math.max(1, Math.round(n)));
+  let added = false;
+  if (state.bookmarks.has(target)) {
+    state.bookmarks.delete(target);
+  } else {
+    state.bookmarks.add(target);
+    added = true;
+  }
+  emit('bookmarkschanged', bookmarks());
+  return added;
+}
+
+export function removeBookmark(n) {
+  if (!state.doc || !state.bookmarks.has(n)) return false;
+  state.bookmarks.delete(n);
+  emit('bookmarkschanged', bookmarks());
+  return true;
+}
+
 /** Recompute fit scales after a container resize. */
 export function handleResize() {
   if (!state.doc) return;
@@ -683,6 +743,9 @@ export function closeDocument() {
   state.historyBack = [];
   state.historyForward = [];
   state.rotation = 0;
+  state.spreadMode = 'single';
+  state.bookmarks.clear();
+  refs.pages().classList.remove('pages--spread');
   refs.pages().replaceChildren();
 
   if (state.pendingLoadingTask) {
@@ -796,6 +859,13 @@ export async function openDocument(data, opts) {
 
   const restore = opts.restore || null;
   state.rotation = [0, 90, 180, 270].includes(restore?.rotation) ? restore.rotation : 0;
+  state.spreadMode = restore?.spreadMode === 'two-page' ? 'two-page' : 'single';
+  refs.pages().classList.toggle('pages--spread', state.spreadMode === 'two-page');
+  state.bookmarks = new Set(
+    Array.isArray(restore?.bookmarks)
+      ? restore.bookmarks.filter(n => Number.isInteger(n) && n >= 1 && n <= state.total)
+      : []
+  );
   const base = rotatedDims({ w: vp1.width, h: vp1.height });
   state.baseWidth = base.w;
   state.baseHeight = base.h;
@@ -828,6 +898,8 @@ export async function openDocument(data, opts) {
   emit('documentopened', { name: opts.name, path: opts.path, total: state.total });
   emit('pagechanged', state.current);
   emit('rotationchanged', state.rotation);
+  emit('spreadchanged', state.spreadMode);
+  emit('bookmarkschanged', bookmarks());
   emit('historychanged', { canBack: false, canForward: false });
   emit('zoomchanged', { mode: state.zoomMode, scale: state.zoomScale });
 

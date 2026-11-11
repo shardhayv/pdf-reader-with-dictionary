@@ -1,6 +1,6 @@
 {
   "name": "gloss",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "A quiet English and Devanagari PDF reader with MDX dictionaries, per-book JSON glossaries, Wiktionary, and Wikipedia lookup",
   "keywords": [
     "pdf",

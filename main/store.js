@@ -23,8 +23,11 @@ const THEMES = new Set(['system', 'light', 'dark']);
 const PAGE_TONES = new Set(['original', 'warm', 'sepia', 'dark']);
 const WIKI_LANGS = new Set(['en', 'hi', 'ne', 'mai']);
 const ZOOM_MODES = new Set(['fit-width', 'fit-page', 'custom']);
-const SIDEBAR_TABS = new Set(['thumbnails', 'outline']);
+const SIDEBAR_TABS = new Set(['thumbnails', 'outline', 'bookmarks']);
 const ROTATIONS = new Set([0, 90, 180, 270]);
+const SPREAD_MODES = new Set(['single', 'two-page']);
+const MAX_SAVED_WORDS = 500;
+const MAX_BOOKMARKS = 200;
 
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 4;
@@ -40,6 +43,7 @@ const PREF_DEFAULTS = Object.freeze({
   webSearchLinkEnabled: true,
   sidebarVisible: false,
   sidebarTab: 'thumbnails',
+  savedWords: [],
   window: { bounds: null, isMaximized: false },
   dictionaries: { order: [], enabled: {} },
 });
@@ -48,7 +52,7 @@ const PREF_DEFAULTS = Object.freeze({
 const RENDERER_WRITABLE = new Set([
   'theme', 'pageTone', 'wikipediaEnabled', 'wikipediaAsFallback', 'wikipediaLang',
   'wiktionaryEnabled', 'wiktionaryAsFallback', 'webSearchLinkEnabled',
-  'sidebarVisible', 'sidebarTab',
+  'sidebarVisible', 'sidebarTab', 'savedWords',
 ]);
 
 let prefs = structuredClone(PREF_DEFAULTS);
@@ -86,6 +90,19 @@ function sanitizePrefs(raw) {
   if (dicts.enabled && typeof dicts.enabled === 'object') {
     for (const p of order) enabled[p] = dicts.enabled[p] !== false;
   }
+  const savedWords = Array.isArray(src.savedWords)
+    ? src.savedWords
+      .filter(item => item && typeof item === 'object' && typeof item.word === 'string' && item.word.trim().length > 0)
+      .slice(0, MAX_SAVED_WORDS)
+      .map(item => ({
+        word: item.word.trim().slice(0, 120),
+        definition: typeof item.definition === 'string' ? item.definition.trim().slice(0, 1200) : '',
+        source: typeof item.source === 'string' ? item.source.trim().slice(0, 120) : '',
+        docName: typeof item.docName === 'string' ? item.docName.trim().slice(0, 200) : '',
+        page: Number.isInteger(item.page) && item.page > 0 ? item.page : null,
+        savedAt: clampNum(item.savedAt, 0, 8.64e15, Date.now()),
+      }))
+    : [];
   return {
     theme: asEnum(src.theme, THEMES, d.theme),
     pageTone: asEnum(src.pageTone, PAGE_TONES, d.pageTone),
@@ -97,6 +114,7 @@ function sanitizePrefs(raw) {
     webSearchLinkEnabled: asBool(src.webSearchLinkEnabled, d.webSearchLinkEnabled),
     sidebarVisible: asBool(src.sidebarVisible, d.sidebarVisible),
     sidebarTab: asEnum(src.sidebarTab, SIDEBAR_TABS, d.sidebarTab),
+    savedWords,
     window: {
       bounds: boundsOk ? { x: b.x, y: b.y, width: b.width, height: b.height } : null,
       isMaximized: asBool(w.isMaximized, false),
@@ -107,6 +125,11 @@ function sanitizePrefs(raw) {
 
 function sanitizeDocState(raw) {
   const src = raw && typeof raw === 'object' ? raw : {};
+  const bookmarks = Array.isArray(src.bookmarks)
+    ? [...new Set(src.bookmarks.filter(n => Number.isInteger(n) && n >= 1 && n <= 1e6))]
+      .sort((a, b) => a - b)
+      .slice(0, MAX_BOOKMARKS)
+    : [];
   return {
     name: typeof src.name === 'string' ? src.name.slice(0, 300) : '',
     page: Math.max(1, Math.round(clampNum(src.page, 1, 1e6, 1))),
@@ -114,6 +137,8 @@ function sanitizeDocState(raw) {
     zoomScale: clampNum(src.zoomScale, ZOOM_MIN, ZOOM_MAX, 1),
     scrollFraction: clampNum(src.scrollFraction, 0, 1, 0),
     rotation: ROTATIONS.has(src.rotation) ? src.rotation : 0,
+    spreadMode: asEnum(src.spreadMode, SPREAD_MODES, 'single'),
+    bookmarks,
     lastOpened: clampNum(src.lastOpened, 0, 8.64e15, Date.now()),
   };
 }

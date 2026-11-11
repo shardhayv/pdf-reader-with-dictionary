@@ -59,16 +59,18 @@ are no accounts, no telemetry, and no analytics.
 | **Wiktionary meanings** | Optional online dictionary: senses, part of speech, examples, with in-popup cross-references |
 | **Wikipedia fallback** | Optional, in English, Hindi, Nepali, or Maithili |
 | **Search the web** | Opt-out link that opens the word in your browser — the only thing Gloss ever hands a search engine |
-| **Rich definition popup** | Pin, drag anywhere on screen, copy definitions in one click, or switch sources with `1`–`9` |
+| **Rich definition popup** | Pin, drag anywhere on screen, save words (`S`), copy definitions in one click, or switch sources with `1`–`9` |
+| **Vocabulary & bookmarks** | Save looked-up words to a persistent vocabulary notebook (with Markdown export) and bookmark pages (`Ctrl+B`) in the `Saved` sidebar |
+| **Two-page book spread** | Switch between a single-page column and a side-by-side two-page book spread (`V`), remembered per document |
 | **Big documents** | Only a handful of pages are ever in memory, so a 300-page PDF opens instantly |
 | **Clickable links** | Link annotations open in your browser or jump within the document; double-click still defines the word |
 | **Reading history** | Jump to an internal link, outline heading, or search hit and return with `Alt+←` / `Alt+→` |
 | **Find in document** | Unicode-aware search with result counts and highlighting |
-| **Pages and outline** | Lazy thumbnail sidebar and the document's own table of contents |
+| **Pages, outline & saved** | Lazy thumbnail sidebar, the document's table of contents, and your bookmarked pages + saved vocabulary |
 | **Zoom & rotation** | Fit width, fit page, free zoom with `Ctrl`+wheel anchored under the cursor, and per-book 90° rotation (`R`) |
 | **Page paper tint** | Read on Original, Warm paper, Sepia, or inverted Night page (`Ctrl+Shift+D`) to reduce eye strain |
 | **Document info & print** | Inspect PDF metadata, page dimensions, and file size (`Ctrl+I`), or print (`Ctrl+P`) |
-| **Picks up where you left off** | Page, zoom, rotation, and scroll position are remembered per document |
+| **Picks up where you left off** | Page, zoom, rotation, spread layout, bookmarks, and scroll position are remembered per document |
 | **Reads like a native app** | Drag-and-drop, file associations, recent documents, reading progress bar, remembered window position |
 | **Light, dark, or system** | Plus reduced-motion support and full keyboard access |
 
@@ -124,10 +126,10 @@ npm run dist:appimage   # AppImage only
 npm run dist:dir        # unpacked build into dist/linux-unpacked/
 ```
 
-Install and run the `.deb`:
+Install and run the `.deb` (or download `gloss_2.4.0_amd64.deb` directly from the [GitHub Releases](https://github.com/shardhayv/pdf-reader-with-dictionary/releases) page):
 
 ```bash
-sudo apt install ./dist/gloss_2.3.0_amd64.deb
+sudo apt install ./dist/gloss_2.4.0_amd64.deb
 gloss                      # or launch from your applications menu
 gloss ~/Documents/paper.pdf
 ```
@@ -154,12 +156,12 @@ for Ubuntu and Debian.
    Open, public-domain, and personally licensed dictionaries can all be used;
    Gloss does not bundle or redistribute dictionary data in its packages.
 
-   To download and auto-register a complete suite of **10 offline category-wise
-   dictionaries** (Computer Science & AI, Philosophy & Logic, Economics &
-   Finance, Politics & Law, History & Civilizations, Biology & Medicine,
-   Chemistry & Materials, Mathematics & Physics, Psychology & Linguistics, and
-   General English WordNet 3.1 — compiled from peer-edited Wikipedia academic
-   glossaries and Princeton WordNet 3.1):
+   To download and auto-register a complete suite of **12 offline category-wise
+   and Devanagari dictionaries** (`361,000+` entries across Computer Science &
+   AI, Philosophy & Logic, Economics & Finance, Politics & Law, History &
+   Civilizations, Biology & Medicine, Chemistry & Materials, Mathematics &
+   Physics, Psychology & Linguistics, General English WordNet 3.1, Devanagari
+   Hindi & Sanskrit Dictionary, and Nepali Brihat Shabdakosh):
 
    ```bash
    npm run dictionaries
@@ -193,17 +195,20 @@ for Ubuntu and Debian.
 | `Ctrl+F` | Find in document |
 | `Enter` / `Shift+Enter` | Next / previous result (in the find bar) |
 | `Ctrl+D` | Look up the current selection |
+| `S` | Save / unsave the current word to your vocabulary notebook (when popup is open) |
 | `1`–`9` | Switch dictionary source tabs (when popup is open) |
 | `Ctrl` `+` / `-` | Zoom in / out |
 | `Ctrl+0` | Fit width |
 | `Ctrl+Shift+0` | Fit page |
 | `Ctrl` + mouse wheel | Zoom around the cursor |
+| `V` | Toggle two-page book spread view |
 | `R` / `Shift+R` | Rotate clockwise / counter-clockwise |
+| `Ctrl+B` | Bookmark / unbookmark the current page |
 | `Alt+←` / `Alt+→` | Back / forward in reading history |
 | `Ctrl+Shift+D` | Cycle page paper tint (Original / Warm / Sepia / Night) |
 | `Ctrl+I` | Document properties |
 | `Ctrl+P` | Print |
-| `F9` | Pages and outline sidebar |
+| `F9` | Pages, outline, and saved sidebar |
 | `F11` | Read mode |
 | `Ctrl+,` | Preferences |
 | `PageUp` / `PageDown` / `Home` / `End` | Scroll |

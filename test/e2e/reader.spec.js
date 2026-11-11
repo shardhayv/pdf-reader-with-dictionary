@@ -423,7 +423,23 @@ test('page rotation, reading history back/forward, page tint, and document prope
     await page.click('#btn-page-tone');
     await expect.poll(async () => page.getAttribute('html', 'data-page-tone')).toBe('warm');
 
-    // 4. Document properties modal opens via Ctrl+I and closes on Escape.
+    // 4. Bookmarking a page updates #btn-bookmark and shows in the Saved sidebar tab.
+    expect(await page.getAttribute('#btn-bookmark', 'aria-pressed')).toBe('false');
+    await page.keyboard.press('Control+b');
+    await expect.poll(async () => page.getAttribute('#btn-bookmark', 'aria-pressed')).toBe('true');
+    await page.click('#btn-sidebar');
+    await page.click('#sidebar-tab-bookmarks');
+    await expect(page.locator('#sidebar-bookmarks')).toContainText('Page 50');
+
+    // 5. Two-page book spread toggles pages--spread class and aria-pressed.
+    expect(await page.getAttribute('#btn-spread', 'aria-pressed')).toBe('false');
+    await page.click('#btn-spread');
+    await expect.poll(async () => page.getAttribute('#btn-spread', 'aria-pressed')).toBe('true');
+    expect(await page.evaluate(() => document.getElementById('pages').classList.contains('pages--spread'))).toBe(true);
+    await page.keyboard.press('v');
+    await expect.poll(async () => page.getAttribute('#btn-spread', 'aria-pressed')).toBe('false');
+
+    // 6. Document properties modal opens via Ctrl+I and closes on Escape.
     await page.keyboard.press('Control+i');
     await expect(page.locator('#doc-info-overlay')).toBeVisible();
     await expect(page.locator('#doc-info-body')).toContainText('large.pdf');

@@ -260,8 +260,8 @@ valid copy continues answering lookups.
 ## State
 
 `main/store.js` owns two files under `app.getPath('userData')`:
-`preferences.json` (settings, window bounds, dictionary list) and
-`documents.json` (per-document page, zoom, rotation, and scroll position; recents are
+`preferences.json` (settings, window bounds, dictionary list, saved vocabulary) and
+`documents.json` (per-document page, zoom, rotation, spread mode, bookmarks, and scroll position; recents are
 derived from it). Writes are debounced and atomic (`tmp` + `rename`), with a
 synchronous flush on quit.
 
@@ -282,10 +282,10 @@ control. It still runs: types are coerced, enums checked, numbers clamped,
 arrays capped, and window bounds intersected against `screen.getDisplayMatching`
 so a stale or hand-edited position cannot reopen the window off-screen.
 
-Renderer writes go through an allowlist of eleven preference keys (`theme`,
+Renderer writes go through an allowlist of twelve preference keys (`theme`,
 `pageTone`, `sidebarOpen`, `sidebarTab`, `defaultZoom`, `autoLookup`,
 `wiktionaryEnabled`, `wiktionaryFallbackOnly`, `wikipediaEnabled`,
-`wikipediaFallbackOnly`, `wikipediaLang`); everything else is
+`wikipediaFallbackOnly`, `wikipediaLang`, `savedWords`); everything else is
 main-process-only.
 
 ---

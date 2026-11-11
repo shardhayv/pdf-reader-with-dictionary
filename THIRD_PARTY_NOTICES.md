@@ -5,7 +5,7 @@ under the GNU Affero General Public License v3.0 only. Its runtime is built on
 the following open-source projects, which retain their own copyrights and
 licenses.
 
-| Component | Version in Gloss 2.3.0 | License | Project |
+| Component | Version in Gloss 2.4.0 | License | Project |
 |---|---:|---|---|
 | js-mdict | 7.0.0 | AGPL-3.0 | <https://github.com/terasum/js-mdict> |
 | DOMPurify | 3.4.17 | MPL-2.0 OR Apache-2.0 | <https://github.com/cure53/DOMPurify> |

@@ -167,6 +167,8 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
 .btn--primary:hover { background: var(--ink-soft); border-color: var(--ink-soft); }
 
 .btn--lg { height: 38px; padding: 0 20px; font-size: 14px; }
+.btn--xs { height: 22px; padding: 0 7px; font-size: 11px; gap: 4px; border-radius: var(--r-sm); }
+.btn--xs svg { width: 12px; height: 12px; }
 
 .icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -268,15 +270,15 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
 .workspace { display: flex; flex: 1; min-height: 0; }
 
 .sidebar {
-  width: 176px; flex: none;
+  width: 212px; flex: none;
   display: flex; flex-direction: column;
   background: var(--surface);
   border-right: 1px solid var(--rule);
 }
 .sidebar-tabs { display: flex; flex: none; border-bottom: 1px solid var(--rule); }
 .sidebar-tab {
-  flex: 1; height: 32px;
-  font-family: inherit; font-size: 12px; font-weight: 500;
+  flex: 1; height: 32px; padding: 0 4px;
+  font-family: inherit; font-size: 11.5px; font-weight: 500;
   color: var(--ink-faint); background: none; border: none;
   border-bottom: 2px solid transparent;
   cursor: pointer;
@@ -334,6 +336,63 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
 }
 .outline-link:hover { background: var(--rule); color: var(--ink); }
 
+.saved-section { margin-bottom: 16px; }
+.saved-section:last-child { margin-bottom: 0; }
+.saved-section-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  margin-bottom: 7px; padding-bottom: 4px;
+  border-bottom: 1px solid var(--rule);
+}
+.saved-section-title {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--ink-faint);
+}
+.saved-list { display: flex; flex-direction: column; gap: 4px; }
+.saved-row {
+  display: flex; align-items: center; gap: 3px;
+  border-radius: var(--r-sm);
+}
+.saved-row--active .saved-jump {
+  color: var(--accent); font-weight: 600; background: var(--accent-wash);
+}
+.saved-jump {
+  flex: 1; display: flex; align-items: center; gap: 6px;
+  padding: 4px 6px; font-family: inherit; font-size: 12.5px; color: var(--ink-soft);
+  background: none; border: none; border-radius: var(--r-sm); cursor: pointer; text-align: left;
+}
+.saved-jump:hover { background: var(--rule); color: var(--ink); }
+.saved-jump svg { width: 13px; height: 13px; flex: none; color: var(--accent); }
+
+.saved-word-card {
+  padding: 7px 8px;
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-md);
+}
+.saved-word-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 4px;
+}
+.saved-word-btn {
+  flex: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px;
+  padding: 0; font-family: var(--serif); font-size: 13.5px; color: var(--ink);
+  background: none; border: none; cursor: pointer; text-align: left;
+}
+.saved-word-btn:hover strong { color: var(--accent); }
+.saved-word-badge {
+  font-family: var(--sans); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.saved-word-def {
+  margin: 4px 0 0;
+  font-family: var(--serif); font-size: 12px; line-height: 1.45;
+  color: var(--ink-soft);
+}
+.saved-word-meta {
+  margin-top: 4px;
+  font-size: 10.5px; color: var(--ink-faint);
+}
+
 /* ─── Document surface ────────────────────────────────────────────────────── */
 
 .pdf-container {
@@ -368,6 +427,14 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
   display: flex; flex-direction: column; align-items: center;
   gap: 14px; padding: 12px calc(var(--page-margin) / 2) 40px;
   min-height: 100%;
+}
+.pages.pages--spread {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  align-content: flex-start;
+  gap: 18px 16px;
 }
 
 .pdf-page-wrapper {

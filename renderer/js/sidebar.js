@@ -19,22 +19,42 @@ const state = {
   urls: new Map(),        // page -> object URL
   pending: new Set(),
   onVisibilityChange: null,
+  onTabChange: null,
+  getSavedWords: null,
+  onRemoveSavedWord: null,
+  onLookupSavedWord: null,
+  onExportSavedWords: null,
 };
 
 let els = null;
 
-export function init({ onVisibilityChange } = {}) {
+export function init({
+  onVisibilityChange,
+  onTabChange,
+  getSavedWords,
+  onRemoveSavedWord,
+  onLookupSavedWord,
+  onExportSavedWords,
+} = {}) {
   els = {
     root: refs.sidebar(),
     tabThumbs: document.getElementById('sidebar-tab-thumbnails'),
     tabOutline: document.getElementById('sidebar-tab-outline'),
+    tabBookmarks: document.getElementById('sidebar-tab-bookmarks'),
     thumbs: document.getElementById('sidebar-thumbnails'),
     outline: document.getElementById('sidebar-outline'),
+    bookmarks: document.getElementById('sidebar-bookmarks'),
   };
   state.onVisibilityChange = onVisibilityChange;
+  state.onTabChange = onTabChange;
+  state.getSavedWords = getSavedWords;
+  state.onRemoveSavedWord = onRemoveSavedWord;
+  state.onLookupSavedWord = onLookupSavedWord;
+  state.onExportSavedWords = onExportSavedWords;
 
-  els.tabThumbs.addEventListener('click', () => setTab('thumbnails'));
-  els.tabOutline.addEventListener('click', () => setTab('outline'));
+  els.tabThumbs.addEventListener('click', () => setTab('thumbnails', { notify: true }));
+  els.tabOutline.addEventListener('click', () => setTab('outline', { notify: true }));
+  els.tabBookmarks?.addEventListener('click', () => setTab('bookmarks', { notify: true }));
 
   els.thumbs.addEventListener('click', (e) => {
     const item = e.target.closest('[data-thumb-page]');
@@ -66,7 +86,13 @@ export function init({ onVisibilityChange } = {}) {
 
   viewer.on('documentopened', buildForDocument);
   viewer.on('documentclosed', teardown);
-  viewer.on('pagechanged', markCurrentPage);
+  viewer.on('pagechanged', (p) => {
+    markCurrentPage(p);
+    if (state.tab === 'bookmarks') renderBookmarksPanel();
+  });
+  viewer.on('bookmarkschanged', () => {
+    renderBookmarksPanel();
+  });
   viewer.on('rotationchanged', () => {
     if (!viewer.hasDocument()) return;
     state.observer?.disconnect();
@@ -94,15 +120,32 @@ export function setVisible(visible) {
 
 export function toggle() { setVisible(!state.visible); }
 
-export function setTab(tab) {
-  state.tab = tab === 'outline' ? 'outline' : 'thumbnails';
-  const thumbs = state.tab === 'thumbnails';
-  els.tabThumbs.classList.toggle('sidebar-tab--active', thumbs);
-  els.tabOutline.classList.toggle('sidebar-tab--active', !thumbs);
-  els.tabThumbs.setAttribute('aria-selected', String(thumbs));
-  els.tabOutline.setAttribute('aria-selected', String(!thumbs));
-  if (thumbs) { show(els.thumbs); hide(els.outline); }
-  else { hide(els.thumbs); show(els.outline); }
+export function setTab(tab, { notify = false } = {}) {
+  state.tab = (tab === 'outline' || tab === 'bookmarks') ? tab : 'thumbnails';
+  const isThumbs = state.tab === 'thumbnails';
+  const isOutline = state.tab === 'outline';
+  const isBookmarks = state.tab === 'bookmarks';
+  els.tabThumbs.classList.toggle('sidebar-tab--active', isThumbs);
+  els.tabOutline.classList.toggle('sidebar-tab--active', isOutline);
+  els.tabBookmarks?.classList.toggle('sidebar-tab--active', isBookmarks);
+  els.tabThumbs.setAttribute('aria-selected', String(isThumbs));
+  els.tabOutline.setAttribute('aria-selected', String(isOutline));
+  els.tabBookmarks?.setAttribute('aria-selected', String(isBookmarks));
+  if (isThumbs) show(els.thumbs); else hide(els.thumbs);
+  if (isOutline) show(els.outline); else hide(els.outline);
+  if (els.bookmarks) {
+    if (isBookmarks) {
+      renderBookmarksPanel();
+      show(els.bookmarks);
+    } else {
+      hide(els.bookmarks);
+    }
+  }
+  if (notify) state.onTabChange?.(state.tab);
+}
+
+export function refreshSavedPanel() {
+  if (els?.bookmarks) renderBookmarksPanel();
 }
 
 // ── Build / teardown ──────────────────────────────────────────────────────────
@@ -116,6 +159,7 @@ function buildForDocument() {
     console.error('Gloss could not build the document outline:', error);
     if (els) els.outline.innerHTML = '<p class="sidebar-empty">The document outline could not be read.</p>';
   });
+  renderBookmarksPanel();
   markCurrentPage(viewer.currentPage());
 }
 
@@ -129,6 +173,7 @@ function teardown() {
   if (els) {
     els.thumbs.replaceChildren();
     els.outline.replaceChildren();
+    renderBookmarksPanel();
   }
 }
 
@@ -213,4 +258,85 @@ function renderOutlineItem(item) {
     <div class="outline-row">${toggle}
       <button class="outline-link" data-outline-index="${index}">${esc(item.title || 'Untitled')}</button>
     </div>${children}</li>`;
+}
+
+// ── Bookmarks & Saved Vocabulary ──────────────────────────────────────────────
+
+function renderBookmarksPanel() {
+  if (!els?.bookmarks) return;
+  const hasDoc = viewer.hasDocument();
+  const pageBookmarks = hasDoc ? viewer.bookmarks() : [];
+  const curPage = hasDoc ? viewer.currentPage() : 1;
+  const curBookmarked = hasDoc && viewer.isBookmarked(curPage);
+  const savedWords = state.getSavedWords?.() || [];
+
+  const pageRows = !hasDoc
+    ? '<p class="sidebar-empty">Open a PDF to bookmark pages.</p>'
+    : pageBookmarks.length === 0
+      ? '<p class="sidebar-empty">No bookmarked pages yet. Press Ctrl+B to bookmark the current page.</p>'
+      : `<div class="saved-list">${pageBookmarks.map(p => `
+          <div class="saved-row${p === curPage ? ' saved-row--active' : ''}">
+            <button class="saved-jump" data-bookmark-page="${p}" title="Jump to page ${p}">
+              ${icons.bookmarkFilled}<span>Page ${p}</span>
+            </button>
+            <button class="icon-btn icon-btn--sm" data-remove-bookmark="${p}" aria-label="Remove page ${p} bookmark" title="Remove bookmark">${icons.close}</button>
+          </div>`).join('')}</div>`;
+
+  const vocabRows = savedWords.length === 0
+    ? '<p class="sidebar-empty">No saved words yet. Click the star in any definition popup (or press S) to save words to your vocabulary notebook.</p>'
+    : `<div class="saved-list">${savedWords.map((item, idx) => `
+        <div class="saved-word-card">
+          <div class="saved-word-head">
+            <button class="saved-word-btn" data-vocab-word="${esc(item.word)}" title="Look up ${esc(item.word)}">
+              <strong>${esc(item.word)}</strong>
+              ${item.source ? `<span class="saved-word-badge">${esc(item.source)}</span>` : ''}
+            </button>
+            <button class="icon-btn icon-btn--sm" data-remove-vocab="${idx}" aria-label="Remove ${esc(item.word)}" title="Remove from vocabulary">${icons.close}</button>
+          </div>
+          ${item.definition ? `<p class="saved-word-def">${esc(item.definition.slice(0, 140))}${item.definition.length > 140 ? '…' : ''}</p>` : ''}
+          ${item.docName ? `<div class="saved-word-meta">${esc(item.docName)}${item.page ? ` · p. ${item.page}` : ''}</div>` : ''}
+        </div>`).join('')}</div>`;
+
+  els.bookmarks.innerHTML = `
+    <div class="saved-section">
+      <div class="saved-section-head">
+        <span class="saved-section-title">Bookmarked pages</span>
+        ${hasDoc ? `<button class="btn btn--xs" id="sidebar-toggle-bookmark">${curBookmarked ? 'Remove p. ' + curPage : '+ Page ' + curPage}</button>` : ''}
+      </div>
+      ${pageRows}
+    </div>
+    <div class="saved-section">
+      <div class="saved-section-head">
+        <span class="saved-section-title">Vocabulary (${savedWords.length})</span>
+        ${savedWords.length > 0 ? `<button class="btn btn--xs" id="sidebar-export-vocab" title="Copy vocabulary as Markdown">${icons.copy}Export</button>` : ''}
+      </div>
+      ${vocabRows}
+    </div>`;
+
+  els.bookmarks.querySelector('#sidebar-toggle-bookmark')?.addEventListener('click', () => {
+    viewer.toggleBookmark(viewer.currentPage());
+  });
+  els.bookmarks.querySelector('#sidebar-export-vocab')?.addEventListener('click', () => {
+    state.onExportSavedWords?.();
+  });
+  for (const btn of els.bookmarks.querySelectorAll('[data-bookmark-page]')) {
+    btn.addEventListener('click', () => {
+      viewer.goToPage(Number(btn.dataset.bookmarkPage), { recordHistory: true });
+    });
+  }
+  for (const btn of els.bookmarks.querySelectorAll('[data-remove-bookmark]')) {
+    btn.addEventListener('click', () => {
+      viewer.removeBookmark(Number(btn.dataset.removeBookmark));
+    });
+  }
+  for (const btn of els.bookmarks.querySelectorAll('[data-vocab-word]')) {
+    btn.addEventListener('click', () => {
+      state.onLookupSavedWord?.(btn.dataset.vocabWord);
+    });
+  }
+  for (const btn of els.bookmarks.querySelectorAll('[data-remove-vocab]')) {
+    btn.addEventListener('click', () => {
+      state.onRemoveSavedWord?.(Number(btn.dataset.removeVocab));
+    });
+  }
 }

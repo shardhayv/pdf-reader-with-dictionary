@@ -100,11 +100,28 @@ async function boot() {
   popup.init({
     onEntryLookup: (word) => lookup.lookupEntry(word),
     onExternalOpen: openExternalLink,
+    isWordSaved: (word) => (app.prefs?.savedWords || []).some(w => w.word.toLowerCase() === String(word).toLowerCase()),
+    onToggleSaveWord: toggleSavedWord,
   });
   search.init();
   sidebar.init({
     onVisibilityChange: (visible) => window.gloss.setPrefs({ sidebarVisible: visible })
       .catch(error => logActionFailure('could not save the sidebar preference', error)),
+    onTabChange: (tab) => window.gloss.setPrefs({ sidebarTab: tab })
+      .catch(error => logActionFailure('could not save the sidebar tab preference', error)),
+    getSavedWords: () => app.prefs?.savedWords || [],
+    onRemoveSavedWord: removeSavedWordAt,
+    onLookupSavedWord: (word) => {
+      const container = refs.container();
+      const rect = container.getBoundingClientRect();
+      lookup.lookupSelection(word, {
+        top: rect.top + 80,
+        bottom: rect.top + 100,
+        left: rect.left + Math.min(280, rect.width / 3),
+        right: rect.left + Math.min(340, rect.width / 2),
+      });
+    },
+    onExportSavedWords: exportSavedWordsMarkdown,
   });
   prefsModal.init({
     getPrefs: () => app.prefs,
@@ -219,6 +236,60 @@ async function cyclePageTone() {
     announce(`Page paper tint: ${PAGE_TONE_LABELS[next]}`);
   } catch (error) {
     actionFailed('could not change page appearance', error, 'Page appearance could not be changed.');
+  }
+}
+
+async function toggleSavedWord({ word, definition, source }) {
+  const cleanWord = String(word || '').trim();
+  if (!cleanWord) return;
+  const current = Array.isArray(app.prefs?.savedWords) ? [...app.prefs.savedWords] : [];
+  const existingIdx = current.findIndex(item => item.word.toLowerCase() === cleanWord.toLowerCase());
+  if (existingIdx >= 0) {
+    current.splice(existingIdx, 1);
+    await applyPrefs({ savedWords: current });
+    sidebar.refreshSavedPanel();
+    toast(`Removed “${cleanWord}” from vocabulary`);
+  } else {
+    current.unshift({
+      word: cleanWord,
+      definition: String(definition || '').trim().slice(0, 1000),
+      source: String(source || '').trim().slice(0, 120),
+      docName: app.docName || '',
+      page: viewer.hasDocument() ? viewer.currentPage() : null,
+      savedAt: Date.now(),
+    });
+    await applyPrefs({ savedWords: current.slice(0, 500) });
+    sidebar.refreshSavedPanel();
+    toast(`Saved “${cleanWord}” to vocabulary`);
+  }
+}
+
+async function removeSavedWordAt(index) {
+  const current = Array.isArray(app.prefs?.savedWords) ? [...app.prefs.savedWords] : [];
+  if (index < 0 || index >= current.length) return;
+  current.splice(index, 1);
+  await applyPrefs({ savedWords: current });
+  sidebar.refreshSavedPanel();
+  popup.syncSaveState();
+}
+
+async function exportSavedWordsMarkdown() {
+  const words = app.prefs?.savedWords || [];
+  if (words.length === 0) return;
+  const lines = [
+    '# Gloss Vocabulary Notebook',
+    '',
+    ...words.map(w => {
+      const meta = [w.source, w.docName ? `${w.docName}${w.page ? ` (p. ${w.page})` : ''}` : '']
+        .filter(Boolean).join(' · ');
+      return `- **${w.word}**${meta ? ` *(${meta})*` : ''}: ${w.definition || '—'}`;
+    }),
+  ];
+  try {
+    await navigator.clipboard.writeText(lines.join('\n'));
+    toast(`Copied ${words.length} vocabulary ${words.length === 1 ? 'entry' : 'entries'} as Markdown`);
+  } catch {
+    toast('Could not copy vocabulary to clipboard.');
   }
 }
 
@@ -510,6 +581,11 @@ function wireToolbar() {
   $('btn-zoom-in').addEventListener('click', () => viewer.zoomIn());
   $('btn-zoom-out').addEventListener('click', () => viewer.zoomOut());
   $('btn-rotate').addEventListener('click', (e) => viewer.rotateBy(e.shiftKey ? -90 : 90));
+  $('btn-spread')?.addEventListener('click', () => viewer.toggleSpreadMode());
+  $('btn-bookmark')?.addEventListener('click', () => {
+    const added = viewer.toggleBookmark();
+    toast(added ? `Bookmarked page ${viewer.currentPage()}` : `Removed bookmark on page ${viewer.currentPage()}`);
+  });
   $('btn-page-tone').addEventListener('click', cyclePageTone);
   $('btn-doc-info').addEventListener('click', openDocInfoModal);
   $('btn-history-back').addEventListener('click', () => viewer.goBack());
@@ -544,6 +620,8 @@ const persistState = debounce(() => {
     zoomScale: viewer.zoomScale(),
     scrollFraction: viewer.scrollFraction(),
     rotation: viewer.rotation(),
+    spreadMode: viewer.spreadMode(),
+    bookmarks: viewer.bookmarks(),
   }).catch(error => {
     logActionFailure('could not save reading position', error);
     const now = Date.now();
@@ -577,13 +655,35 @@ function wireViewerEvents() {
     updateReadingProgress();
   });
 
+  const syncBookmarkBtn = () => {
+    const btn = $('btn-bookmark');
+    if (!btn) return;
+    const active = viewer.hasDocument() && viewer.isBookmarked(viewer.currentPage());
+    btn.setAttribute('aria-pressed', String(active));
+    btn.title = active
+      ? `Remove bookmark on page ${viewer.currentPage()} (Ctrl+B)`
+      : `Bookmark page ${viewer.currentPage()} (Ctrl+B)`;
+  };
+
   viewer.on('pagechanged', (n) => {
     if (document.activeElement !== refs.pageInput()) refs.pageInput().value = String(n);
     updateReadingProgress();
+    syncBookmarkBtn();
     persistState();
   });
 
   viewer.on('rotationchanged', () => {
+    persistState();
+  });
+
+  viewer.on('spreadchanged', (mode) => {
+    const btn = $('btn-spread');
+    if (btn) btn.setAttribute('aria-pressed', String(mode === 'two-page'));
+    persistState();
+  });
+
+  viewer.on('bookmarkschanged', () => {
+    syncBookmarkBtn();
     persistState();
   });
 
@@ -732,6 +832,13 @@ function wireKeyboard() {
           case 'f': e.preventDefault(); search.openSearch(); return;
           case 'o': e.preventDefault(); openViaDialog(); return;
           case 'd': e.preventDefault(); defineSelection(); return;
+          case 'b':
+            if (viewer.hasDocument()) {
+              e.preventDefault();
+              const added = viewer.toggleBookmark();
+              toast(added ? `Bookmarked page ${viewer.currentPage()}` : `Removed bookmark on page ${viewer.currentPage()}`);
+            }
+            return;
           case 'i': e.preventDefault(); openDocInfoModal(); return;
           case 'p': e.preventDefault(); if (viewer.hasDocument()) window.print(); return;
           case ',': e.preventDefault(); prefsModal.open(); return;
@@ -750,6 +857,16 @@ function wireKeyboard() {
       if (e.key === 'r' || e.key === 'R') {
         e.preventDefault();
         viewer.rotateBy(e.shiftKey ? -90 : 90);
+        return;
+      }
+      if ((e.key === 'v' || e.key === 'V') && !e.shiftKey) {
+        e.preventDefault();
+        viewer.toggleSpreadMode();
+        return;
+      }
+      if (popup.isOpen() && (e.key === 's' || e.key === 'S') && !e.shiftKey) {
+        e.preventDefault();
+        popup.toggleSaveCurrentWord();
         return;
       }
       if (popup.isOpen() && /^[1-9]$/.test(e.key)) {
@@ -830,6 +947,13 @@ function handleCommand({ name, arg }) {
     case 'fitPage': viewer.setZoom('fit-page'); break;
     case 'rotateCw': viewer.rotateBy(90); break;
     case 'rotateCcw': viewer.rotateBy(-90); break;
+    case 'toggleSpread': viewer.toggleSpreadMode(); break;
+    case 'toggleBookmark':
+      if (viewer.hasDocument()) {
+        const added = viewer.toggleBookmark();
+        toast(added ? `Bookmarked page ${viewer.currentPage()}` : `Removed bookmark on page ${viewer.currentPage()}`);
+      }
+      break;
     case 'cyclePageTone': cyclePageTone(); break;
     case 'historyBack': viewer.goBack(); break;
     case 'historyForward': viewer.goForward(); break;

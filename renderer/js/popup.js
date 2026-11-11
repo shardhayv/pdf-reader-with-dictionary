@@ -87,24 +87,30 @@ const view = {
   anchorRect: null,
   onEntryLookup: null, // set by lookup.js
   onExternalOpen: null,
+  onToggleSaveWord: null,
+  isWordSaved: null,
   onRelayout: null,
 };
 
 const el = {};
-export function init({ onEntryLookup, onExternalOpen }) {
+export function init({ onEntryLookup, onExternalOpen, onToggleSaveWord, isWordSaved }) {
   el.root = $('popup');
   el.head = el.root.querySelector('.popup-head');
   el.word = $('popup-word');
   el.body = $('popup-body');
   el.tabs = $('popup-tabs');
   el.back = $('popup-back');
+  el.save = $('popup-save');
   el.copy = $('popup-copy');
   el.pin = $('popup-pin');
   el.close = $('popup-close');
   view.onEntryLookup = onEntryLookup;
   view.onExternalOpen = onExternalOpen;
+  view.onToggleSaveWord = onToggleSaveWord;
+  view.isWordSaved = isWordSaved;
 
   el.back.innerHTML = icons.back;
+  if (el.save) el.save.innerHTML = icons.star;
   if (el.copy) el.copy.innerHTML = icons.copy;
   el.pin.innerHTML = icons.pin;
   el.close.innerHTML = icons.close;
@@ -112,6 +118,7 @@ export function init({ onEntryLookup, onExternalOpen }) {
   el.close.addEventListener('click', () => closePopup({ force: true }));
   el.pin.addEventListener('click', togglePin);
   el.back.addEventListener('click', goBack);
+  el.save?.addEventListener('click', toggleSaveCurrentWord);
   el.copy?.addEventListener('click', copyDefinition);
   wireDrag();
 
@@ -158,6 +165,32 @@ export function selectTab(index) {
   view.activeTab = index;
   renderTabs();
   renderBody();
+  return true;
+}
+
+export function syncSaveState() {
+  if (!el.save || !view.payload?.word) return;
+  const saved = Boolean(view.isWordSaved?.(view.payload.word));
+  el.save.innerHTML = saved ? icons.starFilled : icons.star;
+  el.save.setAttribute('aria-pressed', String(saved));
+  el.save.title = saved ? 'Remove from saved vocabulary (S)' : 'Save word to vocabulary (S)';
+}
+
+export async function toggleSaveCurrentWord() {
+  if (!view.payload?.word || !view.onToggleSaveWord) return false;
+  const sources = view.payload.sources || [];
+  const active = sources[Math.min(view.activeTab, Math.max(0, sources.length - 1))];
+  const sourceLabel = active ? tabLabel(active) : '';
+  const bodyText = el.body.innerText
+    .replace(/\b(?:Read more on (?:Wiktionary|Wikipedia)|Search the web)\b.*$/s, '')
+    .replace(new RegExp(`^${sourceLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*`), '')
+    .trim();
+  await view.onToggleSaveWord({
+    word: view.payload.word,
+    definition: bodyText.slice(0, 600),
+    source: sourceLabel,
+  });
+  syncSaveState();
   return true;
 }
 
@@ -292,6 +325,7 @@ export function render(payload, anchorRect) {
 
   el.word.textContent = payload.word;
   el.back.hidden = view.history.length === 0;
+  syncSaveState();
   renderTabs();
   renderBody();
 
@@ -308,6 +342,7 @@ export function render(payload, anchorRect) {
 function renderAll() {
   el.word.textContent = view.payload.word;
   el.back.hidden = view.history.length === 0;
+  syncSaveState();
   renderTabs();
   renderBody();
 }
