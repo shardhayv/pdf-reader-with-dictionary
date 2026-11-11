@@ -34,12 +34,18 @@ const state = {
   current: 1,
   zoomMode: 'fit-width',
   zoomScale: 1,
+  rotation: 0,      // 0 | 90 | 180 | 270 user rotation offset
+  rawBaseWidth: 612,
+  rawBaseHeight: 792,
   baseWidth: 612,   // page 1 at scale 1 (US Letter fallback)
   baseHeight: 792,
-  pageDims: new Map(),     // page -> {w, h} at scale 1
+  rawPageDims: new Map(),  // page -> {w, h} at scale 1, rotation 0
+  pageDims: new Map(),     // page -> {w, h} at scale 1, current rotation
   renderTasks: new Map(),  // page -> RenderTask
   textCache: new Map(),    // page -> { text, items: [{start, end}] }
   visiblePages: new Set(),
+  historyBack: [],         // [{ page, scrollTop }]
+  historyForward: [],      // [{ page, scrollTop }]
   pageObserver: null,
   lazyObserver: null,
 };
@@ -65,10 +71,19 @@ export const pageCount = () => state.total;
 export const currentPage = () => state.current;
 export const zoomMode = () => state.zoomMode;
 export const zoomScale = () => state.zoomScale;
+export const rotation = () => state.rotation;
+export const canGoBack = () => state.historyBack.length > 0;
+export const canGoForward = () => state.historyForward.length > 0;
 
 // ── Geometry ──────────────────────────────────────────────────────────────────
 
+function rotatedDims({ w, h }, rot = state.rotation) {
+  return (rot === 90 || rot === 270) ? { w: h, h: w } : { w, h };
+}
+
 function dimsFor(n) {
+  const raw = state.rawPageDims.get(n);
+  if (raw) return rotatedDims(raw);
   return state.pageDims.get(n) || { w: state.baseWidth, h: state.baseHeight };
 }
 
@@ -113,7 +128,8 @@ function buildLinkLayer(annotations, viewport) {
     if (!external && !a.dest) continue;
     if (!Array.isArray(a.rect) || a.rect.length !== 4) continue;
 
-    const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(a.rect);
+    const [x1, y1] = viewport.convertToViewportPoint(a.rect[0], a.rect[1]);
+    const [x2, y2] = viewport.convertToViewportPoint(a.rect[2], a.rect[3]);
     const left = Math.min(x1, x2);
     const top = Math.min(y1, y2);
     const width = Math.abs(x2 - x1);
@@ -255,11 +271,13 @@ export function renderPage(n) {
       const page = await state.doc.getPage(n);
       if (gen !== state.generation) return;
 
-      if (!state.pageDims.has(n)) {
-        const vp1 = page.getViewport({ scale: 1 });
-        state.pageDims.set(n, { w: vp1.width, h: vp1.height });
+      if (!state.rawPageDims.has(n)) {
+        const vp0 = page.getViewport({ scale: 1, rotation: page.rotate || 0 });
+        state.rawPageDims.set(n, { w: vp0.width, h: vp0.height });
       }
-      const viewport = page.getViewport({ scale: state.zoomScale });
+      const effectiveRotation = ((page.rotate || 0) + state.rotation) % 360;
+      state.pageDims.set(n, rotatedDims(state.rawPageDims.get(n)));
+      const viewport = page.getViewport({ scale: state.zoomScale, rotation: effectiveRotation });
       sizeWrapper(wrapper, n);
 
       const dpr = window.devicePixelRatio || 1;
@@ -277,7 +295,7 @@ export function renderPage(n) {
       const ctx = canvas.getContext('2d', { alpha: false });
       ctx.scale(ratio, ratio);
 
-      task = page.render({ canvasContext: ctx, viewport });
+      task = page.render({ canvas: null, canvasContext: ctx, viewport });
       state.renderTasks.set(n, task);
       await task.promise;
       state.renderTasks.delete(n);
@@ -542,6 +560,39 @@ export function setZoom(mode, explicitScale = null, anchor = null) {
 export function zoomIn(anchor) { setZoom('custom', state.zoomScale * ZOOM_STEP, anchor); }
 export function zoomOut(anchor) { setZoom('custom', state.zoomScale / ZOOM_STEP, anchor); }
 
+/** Rotate all pages by a multiple of 90 degrees (e.g. +90 or -90). */
+export function setRotation(degrees) {
+  if (!state.doc) return;
+  const normalized = (((Math.round(degrees / 90) * 90) % 360) + 360) % 360;
+  if (normalized === state.rotation) return;
+  const pageBefore = state.current;
+  state.rotation = normalized;
+  const base = rotatedDims({ w: state.rawBaseWidth, h: state.rawBaseHeight });
+  state.baseWidth = base.w;
+  state.baseHeight = base.h;
+  for (const [n, raw] of state.rawPageDims.entries()) {
+    state.pageDims.set(n, rotatedDims(raw));
+  }
+  if (state.zoomMode === 'fit-width' || state.zoomMode === 'fit-page') {
+    state.zoomScale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, computeFitScale(state.zoomMode)));
+  }
+  for (const wrapper of refs.pages().children) {
+    const n = Number(wrapper.dataset.pageNumber);
+    if (wrapper.dataset.rendered === 'true') destroyPage(wrapper);
+    sizeWrapper(wrapper, n);
+  }
+  goToPage(pageBefore, { instant: true, recordHistory: false });
+  for (let i = Math.max(1, pageBefore - 1); i <= Math.min(state.total, pageBefore + 1); i++) {
+    renderPage(i);
+  }
+  emit('rotationchanged', state.rotation);
+  emit('zoomchanged', { mode: state.zoomMode, scale: state.zoomScale });
+}
+
+export function rotateBy(deltaDegrees) {
+  setRotation(state.rotation + deltaDegrees);
+}
+
 /** Recompute fit scales after a container resize. */
 export function handleResize() {
   if (!state.doc) return;
@@ -550,17 +601,52 @@ export function handleResize() {
   }
 }
 
-// ── Navigation ────────────────────────────────────────────────────────────────
+// ── Navigation & Reading History ──────────────────────────────────────────────
 
-export function goToPage(n, { instant = false } = {}) {
+const MAX_HISTORY = 40;
+
+function recordHistoryEntry() {
+  if (!state.doc) return;
+  const container = refs.container();
+  const entry = { page: state.current, scrollTop: Math.round(container.scrollTop) };
+  const last = state.historyBack[state.historyBack.length - 1];
+  if (last && last.page === entry.page && Math.abs(last.scrollTop - entry.scrollTop) < 24) return;
+  state.historyBack.push(entry);
+  if (state.historyBack.length > MAX_HISTORY) state.historyBack.shift();
+  state.historyForward = [];
+  emit('historychanged', { canBack: canGoBack(), canForward: canGoForward() });
+}
+
+export function goToPage(n, { instant = false, recordHistory = false } = {}) {
   const clamped = Math.min(state.total, Math.max(1, Math.round(n)));
   const wrapper = wrapperFor(clamped);
   if (!wrapper) return;
+  if (recordHistory && clamped !== state.current) recordHistoryEntry();
   const container = refs.container();
   container.scrollTo({
     top: wrapper.offsetTop - 8,
     behavior: instant ? 'auto' : 'smooth',
   });
+}
+
+export function goBack() {
+  if (!state.doc || state.historyBack.length === 0) return false;
+  const container = refs.container();
+  state.historyForward.push({ page: state.current, scrollTop: Math.round(container.scrollTop) });
+  const target = state.historyBack.pop();
+  container.scrollTo({ top: target.scrollTop, behavior: 'auto' });
+  emit('historychanged', { canBack: canGoBack(), canForward: canGoForward() });
+  return true;
+}
+
+export function goForward() {
+  if (!state.doc || state.historyForward.length === 0) return false;
+  const container = refs.container();
+  state.historyBack.push({ page: state.current, scrollTop: Math.round(container.scrollTop) });
+  const target = state.historyForward.pop();
+  container.scrollTo({ top: target.scrollTop, behavior: 'auto' });
+  emit('historychanged', { canBack: canGoBack(), canForward: canGoForward() });
+  return true;
 }
 
 export async function ensureRendered(n) {
@@ -592,7 +678,11 @@ export function closeDocument() {
   state.lazyObserver = null;
   state.visiblePages.clear();
   state.textCache.clear();
+  state.rawPageDims.clear();
   state.pageDims.clear();
+  state.historyBack = [];
+  state.historyForward = [];
+  state.rotation = 0;
   refs.pages().replaceChildren();
 
   if (state.pendingLoadingTask) {
@@ -608,7 +698,7 @@ export function closeDocument() {
   state.doc = null;
   state.total = 0;
   state.current = 1;
-  if (doc) doc.destroy().catch(() => {});
+  if (doc) Promise.resolve(doc.destroy?.() ?? doc.cleanup?.()).catch(() => {});
   emit('documentclosed');
 }
 
@@ -639,6 +729,8 @@ export async function openDocument(data, opts) {
     cMapUrl: new URL('cmaps/', PDFJS_BASE).href,
     cMapPacked: true,
     standardFontDataUrl: new URL('standard_fonts/', PDFJS_BASE).href,
+    wasmUrl: new URL('wasm/', PDFJS_BASE).href,
+    iccUrl: new URL('iccs/', PDFJS_BASE).href,
     isEvalSupported: false, // lets the CSP drop 'unsafe-eval'
   });
   state.pendingLoadingTask = loadingTask;
@@ -671,7 +763,6 @@ export async function openDocument(data, opts) {
   try {
     doc = await loadingTask.promise;
     if (openId !== state.openSequence) {
-      doc.destroy().catch(() => {});
       return abandon('superseded', '');
     }
     // Reading page 1 is part of validation: a file can pass the header check
@@ -679,7 +770,6 @@ export async function openDocument(data, opts) {
     page1 = await doc.getPage(1);
     vp1 = page1.getViewport({ scale: 1 });
   } catch (err) {
-    if (doc) doc.destroy().catch(() => {});
     if (openId !== state.openSequence) return abandon('superseded', '');
     if (passwordCanceled) return abandon('password_canceled', '');
     const name = err?.name || '';
@@ -689,7 +779,6 @@ export async function openDocument(data, opts) {
     return abandon('open_failed', err?.message || 'The document could not be opened.');
   }
   if (openId !== state.openSequence) {
-    doc.destroy().catch(() => {});
     return abandon('superseded', '');
   }
 
@@ -701,17 +790,31 @@ export async function openDocument(data, opts) {
   state.loadingTask = loadingTask;
   state.doc = doc;
   state.total = doc.numPages;
-  state.baseWidth = vp1.width;
-  state.baseHeight = vp1.height;
-  state.pageDims.set(1, { w: vp1.width, h: vp1.height });
+  state.rawBaseWidth = vp1.width;
+  state.rawBaseHeight = vp1.height;
+  state.rawPageDims.set(1, { w: vp1.width, h: vp1.height });
 
   const restore = opts.restore || null;
+  state.rotation = [0, 90, 180, 270].includes(restore?.rotation) ? restore.rotation : 0;
+  const base = rotatedDims({ w: vp1.width, h: vp1.height });
+  state.baseWidth = base.w;
+  state.baseHeight = base.h;
+  state.pageDims.set(1, base);
   state.zoomMode = restore?.zoomMode || 'fit-width';
   state.zoomScale = state.zoomMode === 'custom'
     ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, restore?.zoomScale || 1))
     : computeFitScale(state.zoomMode);
 
   buildPlaceholders();
+  if (state.zoomMode !== 'custom') {
+    const postLayoutScale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, computeFitScale(state.zoomMode)));
+    if (Math.abs(postLayoutScale - state.zoomScale) > 0.0005) {
+      state.zoomScale = postLayoutScale;
+      for (const wrapper of refs.pages().children) {
+        sizeWrapper(wrapper, Number(wrapper.dataset.pageNumber));
+      }
+    }
+  }
   setupObservers();
 
   if (restore && restore.scrollFraction > 0) {
@@ -724,10 +827,44 @@ export async function openDocument(data, opts) {
 
   emit('documentopened', { name: opts.name, path: opts.path, total: state.total });
   emit('pagechanged', state.current);
+  emit('rotationchanged', state.rotation);
+  emit('historychanged', { canBack: false, canForward: false });
   emit('zoomchanged', { mode: state.zoomMode, scale: state.zoomScale });
 
   assessDocumentText().catch(() => {});
   return { ok: true };
+}
+
+/** Extract PDF metadata and page size info for the Document Properties dialog. */
+export async function getDocumentMetadata() {
+  if (!state.doc) return null;
+  let info = {};
+  let metadata = null;
+  try {
+    const res = await state.doc.getMetadata();
+    info = res?.info || {};
+    metadata = res?.metadata || null;
+  } catch { /* metadata optional */ }
+  const pick = (key, xmpKey) => {
+    const fromXmp = xmpKey && typeof metadata?.get === 'function' ? metadata.get(xmpKey) : '';
+    const raw = (fromXmp || info[key] || '');
+    return typeof raw === 'string' ? raw.trim() : String(raw || '').trim();
+  };
+  return {
+    title: pick('Title', 'dc:title'),
+    author: pick('Author', 'dc:creator'),
+    subject: pick('Subject', 'dc:description'),
+    keywords: pick('Keywords', 'pdf:Keywords'),
+    creator: pick('Creator', 'xmp:CreatorTool'),
+    producer: pick('Producer', 'pdf:Producer'),
+    pdfVersion: pick('PDFFormatVersion', ''),
+    linearized: Boolean(info.IsLinearized),
+    pages: state.total,
+    widthPt: state.rawBaseWidth,
+    heightPt: state.rawBaseHeight,
+    rotation: state.rotation,
+    fingerprint: documentFingerprint(),
+  };
 }
 
 /** Document outline (or null). Items: {title, dest, items[]}. */
@@ -771,15 +908,16 @@ export async function renderThumbnail(n, cssWidth) {
   try {
     const page = await state.doc.getPage(n);
     if (gen !== state.generation) return null;
-    const vp1 = page.getViewport({ scale: 1 });
+    const effectiveRotation = ((page.rotate || 0) + state.rotation) % 360;
+    const vp1 = page.getViewport({ scale: 1, rotation: effectiveRotation });
     const scale = cssWidth / vp1.width;
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
-    const viewport = page.getViewport({ scale: scale * ratio });
+    const viewport = page.getViewport({ scale: scale * ratio, rotation: effectiveRotation });
     const canvas = document.createElement('canvas');
     canvas.width = Math.ceil(viewport.width);
     canvas.height = Math.ceil(viewport.height);
     const ctx = canvas.getContext('2d', { alpha: false });
-    await page.render({ canvasContext: ctx, viewport }).promise;
+    await page.render({ canvas: null, canvasContext: ctx, viewport }).promise;
     if (gen !== state.generation) return null;
     const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.72));
     canvas.width = canvas.height = 0;

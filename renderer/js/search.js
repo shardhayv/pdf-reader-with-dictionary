@@ -260,7 +260,7 @@ async function goToMatch(index) {
   updateCount();
   announce(`Result ${index + 1} of ${state.matches.length}`);
 
-  viewer.goToPage(m.page, { instant: true });
+  viewer.goToPage(m.page, { instant: true, recordHistory: true });
   await viewer.ensureRendered(m.page);
   rebuildHighlights();
 

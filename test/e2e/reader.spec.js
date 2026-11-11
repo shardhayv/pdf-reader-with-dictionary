@@ -378,3 +378,59 @@ test('reading position, zoom and theme are restored for a document', async () =>
     await second.app.close();
   }
 });
+
+test('page rotation, reading history back/forward, page tint, and document properties work', async () => {
+  const { app, page } = await launchGloss({ open: 'large.pdf' });
+  try {
+    await waitForDocument(page);
+
+    // 1. Page rotation swaps portrait dimensions to landscape and back.
+    await page.keyboard.press('Control+Shift+0'); // fit-page so aspect ratio is directly visible
+    await page.waitForTimeout(300);
+    const portrait = await page.evaluate(() => {
+      const r = document.querySelector('.pdf-page-wrapper').getBoundingClientRect();
+      return { w: r.width, h: r.height };
+    });
+    expect(portrait.h).toBeGreaterThan(portrait.w);
+
+    await page.click('#btn-rotate');
+    await page.waitForTimeout(400);
+    const landscape = await page.evaluate(() => {
+      const r = document.querySelector('.pdf-page-wrapper').getBoundingClientRect();
+      return { w: r.width, h: r.height };
+    });
+    expect(landscape.w).toBeGreaterThan(landscape.h);
+
+    await page.keyboard.press('Shift+R');
+    await page.waitForTimeout(400);
+
+    // 2. Jumping to a page records history; Alt+ArrowLeft and Alt+ArrowRight step back and forward.
+    expect(await page.locator('#btn-history-back').isHidden()).toBe(true);
+    await page.fill('#page-input', '50');
+    await page.press('#page-input', 'Enter');
+    await expect.poll(async () => page.inputValue('#page-input')).toBe('50');
+    await expect(page.locator('#btn-history-back')).toBeVisible();
+
+    await page.keyboard.press('Alt+ArrowLeft');
+    await expect.poll(async () => page.inputValue('#page-input')).toBe('1');
+    await expect(page.locator('#btn-history-forward')).toBeVisible();
+
+    await page.keyboard.press('Alt+ArrowRight');
+    await expect.poll(async () => page.inputValue('#page-input')).toBe('50');
+
+    // 3. Cycling page paper tint sets data-page-tone on the root element.
+    expect(await page.getAttribute('html', 'data-page-tone')).toBeNull();
+    await page.click('#btn-page-tone');
+    await expect.poll(async () => page.getAttribute('html', 'data-page-tone')).toBe('warm');
+
+    // 4. Document properties modal opens via Ctrl+I and closes on Escape.
+    await page.keyboard.press('Control+i');
+    await expect(page.locator('#doc-info-overlay')).toBeVisible();
+    await expect(page.locator('#doc-info-body')).toContainText('large.pdf');
+    await expect(page.locator('#doc-info-body')).toContainText('300');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#doc-info-overlay')).toBeHidden();
+  } finally {
+    await app.close();
+  }
+});

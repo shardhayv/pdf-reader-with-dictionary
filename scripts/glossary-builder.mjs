@@ -158,11 +158,12 @@ export async function extractPdf(inputPath) {
     cMapUrl: asDirectoryPath(path.join(PDFJS_ROOT, 'cmaps')),
     cMapPacked: true,
     standardFontDataUrl: asDirectoryPath(path.join(PDFJS_ROOT, 'standard_fonts')),
+    wasmUrl: asDirectoryPath(path.join(PDFJS_ROOT, 'wasm')),
+    iccUrl: asDirectoryPath(path.join(PDFJS_ROOT, 'iccs')),
   });
 
-  let doc;
   try {
-    doc = await task.promise;
+    const doc = await task.promise;
     const pages = [];
     for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber++) {
       const page = await doc.getPage(pageNumber);
@@ -178,8 +179,7 @@ export async function extractPdf(inputPath) {
       quality: assessTextQuality(sample),
     };
   } finally {
-    if (doc) await doc.destroy();
-    else await task.destroy().catch(() => {});
+    await task.destroy().catch(() => {});
   }
 }
 

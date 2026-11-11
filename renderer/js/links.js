@@ -23,7 +23,8 @@ let onExternal = null;
 let onFailure = null;
 let pendingTimer = null;
 let hoverEl = null;
-let hoverFrame = 0;
+let hoverTimer = null;
+let lastPointer = null;
 
 function cancelPending() {
   clearTimeout(pendingTimer);
@@ -54,7 +55,7 @@ async function activate(el) {
       return;
     }
     const page = await viewer.resolveDestination(el._dest);
-    if (page) viewer.goToPage(page);
+    if (page) viewer.goToPage(page, { recordHistory: true });
     else onFailure?.('That link does not point anywhere in this document.');
   } catch (error) {
     console.error('gloss: could not follow a PDF link:', error);
@@ -87,14 +88,22 @@ function setHover(el) {
   document.body.classList.toggle('has-link-hover', !!el);
 }
 
+function updateHover(clientX, clientY, target) {
+  const origin = target instanceof Element ? target : document.elementFromPoint(clientX, clientY);
+  const wrapper = origin?.closest?.('.pdf-page-wrapper');
+  setHover(wrapper ? linkAt(wrapper, clientX, clientY) : null);
+}
+
 function handleMove(e) {
-  if (hoverFrame) return; // one hit-test per frame is plenty
   const { clientX, clientY, target } = e;
-  hoverFrame = requestAnimationFrame(() => {
-    hoverFrame = 0;
-    const wrapper = target.closest?.('.pdf-page-wrapper');
-    setHover(wrapper ? linkAt(wrapper, clientX, clientY) : null);
-  });
+  lastPointer = { x: clientX, y: clientY };
+  if (!hoverTimer) {
+    updateHover(clientX, clientY, target);
+    hoverTimer = setTimeout(() => {
+      hoverTimer = null;
+      if (lastPointer) updateHover(lastPointer.x, lastPointer.y, null);
+    }, 16);
+  }
 }
 
 /** Links are focusable, so Enter and Space must work without a pointer. */
@@ -114,5 +123,13 @@ export function attach(container, { openExternal, onError } = {}) {
   container.addEventListener('dblclick', cancelPending);
   container.addEventListener('mousemove', handleMove);
   container.addEventListener('keydown', handleKeydown);
-  container.addEventListener('mouseleave', () => setHover(null));
+  container.addEventListener('mouseleave', () => {
+    lastPointer = null;
+    clearTimeout(hoverTimer);
+    hoverTimer = null;
+    setHover(null);
+  });
+  viewer.on('pagerendered', () => {
+    if (lastPointer) updateHover(lastPointer.x, lastPointer.y, null);
+  });
 }

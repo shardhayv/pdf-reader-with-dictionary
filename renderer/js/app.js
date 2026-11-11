@@ -23,6 +23,7 @@ const app = {
   prefs: null,
   docPath: null,
   docName: null,
+  docSize: 0,
   readMode: false,
   passwordResolve: null,
 };
@@ -83,7 +84,7 @@ window.addEventListener('unhandledrejection', event => {
 
 async function boot() {
   app.prefs = await window.gloss.getPrefs();
-  applyTheme(app.prefs.theme);
+  applyTheme(app.prefs.theme, app.prefs.pageTone);
   lookup.setPrefs(app.prefs);
 
   /** Single route to the system browser, shared by popup and PDF links. */
@@ -175,18 +176,49 @@ boot().catch(error => reportUnexpected(error, { fatal: true }));
 
 // ── Preferences / theme ───────────────────────────────────────────────────────
 
+const PAGE_TONE_ORDER = ['original', 'warm', 'sepia', 'dark'];
+const PAGE_TONE_LABELS = {
+  original: 'Original white',
+  warm: 'Warm paper',
+  sepia: 'Sepia',
+  dark: 'Night page',
+};
+
 async function applyPrefs(delta) {
   app.prefs = await window.gloss.setPrefs(delta);
-  applyTheme(app.prefs.theme);
+  applyTheme(app.prefs.theme, app.prefs.pageTone);
   lookup.setPrefs(app.prefs);
   await refreshSourceChips();
 }
 
-function applyTheme(theme) {
+function applyTheme(theme, pageTone = app.prefs?.pageTone || 'original') {
   if (theme === 'light' || theme === 'dark') {
     document.documentElement.dataset.theme = theme;
   } else {
     delete document.documentElement.dataset.theme;
+  }
+  const tone = PAGE_TONE_ORDER.includes(pageTone) ? pageTone : 'original';
+  if (tone === 'original') {
+    delete document.documentElement.dataset.pageTone;
+  } else {
+    document.documentElement.dataset.pageTone = tone;
+  }
+  const toneBtn = $('btn-page-tone');
+  if (toneBtn) {
+    const label = PAGE_TONE_LABELS[tone] || 'Original white';
+    toneBtn.title = `Page paper tint: ${label} (Ctrl+Shift+D)`;
+    toneBtn.setAttribute('aria-pressed', String(tone !== 'original'));
+  }
+}
+
+async function cyclePageTone() {
+  const current = app.prefs?.pageTone || 'original';
+  const next = PAGE_TONE_ORDER[(PAGE_TONE_ORDER.indexOf(current) + 1) % PAGE_TONE_ORDER.length];
+  try {
+    await applyPrefs({ pageTone: next });
+    announce(`Page paper tint: ${PAGE_TONE_LABELS[next]}`);
+  } catch (error) {
+    actionFailed('could not change page appearance', error, 'Page appearance could not be changed.');
   }
 }
 
@@ -324,6 +356,7 @@ async function handleOpenResult(result) {
 
   app.docPath = result.path;
   app.docName = result.name;
+  app.docSize = result.size || 0;
   document.title = `${result.name} — Gloss`;
   hide(refs.emptyState());
   search.resetForNewDocument();
@@ -388,6 +421,85 @@ function showBanner(message) {
 function hideBanner() { hide(refs.docBanner()); }
 $('banner-dismiss').addEventListener('click', hideBanner);
 
+// ── Document properties modal ─────────────────────────────────────────────────
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function formatPageDimensions(widthPt, heightPt) {
+  if (!widthPt || !heightPt) return '—';
+  const wMm = Math.round((widthPt / 72) * 25.4);
+  const hMm = Math.round((heightPt / 72) * 25.4);
+  const wIn = (widthPt / 72).toFixed(2);
+  const hIn = (heightPt / 72).toFixed(2);
+  return `${wMm} × ${hMm} mm (${wIn} × ${hIn} in)`;
+}
+
+async function openDocInfoModal() {
+  if (!viewer.hasDocument()) {
+    toast('Open a PDF first to view its properties.');
+    return;
+  }
+  const overlay = $('doc-info-overlay');
+  const body = $('doc-info-body');
+  const closeBtn = $('doc-info-close');
+  if (!overlay || !body) return;
+  closeBtn.innerHTML = icons.close;
+  const meta = await viewer.getDocumentMetadata();
+  if (!meta) return;
+
+  const row = (label, value) => `
+    <div class="doc-info-row">
+      <dt>${esc(label)}</dt>
+      <dd>${esc(value || '—')}</dd>
+    </div>`;
+
+  body.innerHTML = `
+    <dl class="doc-info-list">
+      ${row('File name', app.docName)}
+      ${row('Location', app.docPath)}
+      ${row('File size', formatBytes(app.docSize))}
+      ${row('Title', meta.title)}
+      ${row('Author', meta.author)}
+      ${row('Subject', meta.subject)}
+      ${row('Creator', meta.creator)}
+      ${row('Producer', meta.producer)}
+      ${row('PDF version', meta.pdfVersion ? `PDF ${meta.pdfVersion}${meta.linearized ? ' (Fast Web View)' : ''}` : '')}
+      ${row('Pages', String(meta.pages))}
+      ${row('Page size', formatPageDimensions(meta.widthPt, meta.heightPt))}
+      ${meta.rotation ? row('Rotation', `${meta.rotation}°`) : ''}
+    </dl>
+    <div class="prefs-actions">
+      <button type="button" class="btn" id="doc-info-copy-path">${icons.copy}Copy file path</button>
+    </div>`;
+
+  $('doc-info-copy-path')?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(app.docPath || '');
+      toast('Copied file path');
+    } catch {
+      toast('Could not copy file path.');
+    }
+  });
+
+  show(overlay);
+  closeBtn.focus();
+}
+
+function closeDocInfoModal() {
+  const overlay = $('doc-info-overlay');
+  if (overlay && isShown(overlay)) hide(overlay);
+}
+
+$('doc-info-close')?.addEventListener('click', closeDocInfoModal);
+$('doc-info-overlay')?.addEventListener('pointerdown', (e) => {
+  if (e.target === $('doc-info-overlay')) closeDocInfoModal();
+});
+
 // ── Toolbar ───────────────────────────────────────────────────────────────────
 
 function wireToolbar() {
@@ -397,6 +509,11 @@ function wireToolbar() {
   $('btn-prefs').addEventListener('click', () => prefsModal.open());
   $('btn-zoom-in').addEventListener('click', () => viewer.zoomIn());
   $('btn-zoom-out').addEventListener('click', () => viewer.zoomOut());
+  $('btn-rotate').addEventListener('click', (e) => viewer.rotateBy(e.shiftKey ? -90 : 90));
+  $('btn-page-tone').addEventListener('click', cyclePageTone);
+  $('btn-doc-info').addEventListener('click', openDocInfoModal);
+  $('btn-history-back').addEventListener('click', () => viewer.goBack());
+  $('btn-history-forward').addEventListener('click', () => viewer.goForward());
   $('btn-prev-page').addEventListener('click', () => viewer.goToPage(viewer.currentPage() - 1));
   $('btn-next-page').addEventListener('click', () => viewer.goToPage(viewer.currentPage() + 1));
   $('open-pdf-cta').addEventListener('click', openViaDialog);
@@ -411,7 +528,7 @@ function wireToolbar() {
   pageInput.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     const n = parseInt(pageInput.value, 10);
-    if (Number.isFinite(n)) viewer.goToPage(n);
+    if (Number.isFinite(n)) viewer.goToPage(n, { recordHistory: true });
     pageInput.blur();
   });
   pageInput.addEventListener('blur', () => { pageInput.value = String(viewer.currentPage()); });
@@ -426,6 +543,7 @@ const persistState = debounce(() => {
     zoomMode: viewer.zoomMode(),
     zoomScale: viewer.zoomScale(),
     scrollFraction: viewer.scrollFraction(),
+    rotation: viewer.rotation(),
   }).catch(error => {
     logActionFailure('could not save reading position', error);
     const now = Date.now();
@@ -436,17 +554,44 @@ const persistState = debounce(() => {
   });
 }, STATE_SAVE_DEBOUNCE_MS);
 
+function updateReadingProgress() {
+  const bar = $('reading-progress');
+  const fill = $('reading-progress-fill');
+  if (!bar || !fill) return;
+  if (!viewer.hasDocument()) {
+    hide(bar);
+    return;
+  }
+  show(bar);
+  const total = viewer.pageCount();
+  const ratio = total <= 1 ? 1 : Math.max(viewer.scrollFraction(), viewer.currentPage() / total);
+  fill.style.transform = `scaleX(${Math.max(0, Math.min(1, ratio))})`;
+}
+
 function wireViewerEvents() {
   viewer.on('documentopened', ({ total }) => {
     refs.pageInput().value = '1';
     refs.pageInput().max = String(total);
     refs.pageTotal().textContent = `of ${total}`;
     $('viewer-controls').hidden = false;
+    updateReadingProgress();
   });
 
   viewer.on('pagechanged', (n) => {
     if (document.activeElement !== refs.pageInput()) refs.pageInput().value = String(n);
+    updateReadingProgress();
     persistState();
+  });
+
+  viewer.on('rotationchanged', () => {
+    persistState();
+  });
+
+  viewer.on('historychanged', ({ canBack, canForward }) => {
+    const backBtn = $('btn-history-back');
+    const fwdBtn = $('btn-history-forward');
+    if (backBtn) backBtn.hidden = !canBack;
+    if (fwdBtn) fwdBtn.hidden = !canForward;
   });
 
   viewer.on('zoomchanged', ({ mode, scale }) => {
@@ -472,7 +617,10 @@ function wireViewerEvents() {
     }
   });
 
-  refs.container().addEventListener('scroll', persistState, { passive: true });
+  refs.container().addEventListener('scroll', () => {
+    updateReadingProgress();
+    persistState();
+  }, { passive: true });
 }
 
 // ── Drag and drop ─────────────────────────────────────────────────────────────
@@ -531,6 +679,7 @@ function inTextField(target) {
 /** Escape closes exactly one layer, topmost first. */
 function handleEscape() {
   if (isShown(refs.passwordOverlay())) { resolvePassword(null); return true; }
+  if ($('doc-info-overlay') && isShown($('doc-info-overlay'))) { closeDocInfoModal(); return true; }
   if (prefsModal.isOpen()) { prefsModal.close(); return true; }
   if (search.isActive()) { search.closeSearch(); return true; }
   if (popup.isOpen()) { popup.closePopup({ force: true }); return true; }
@@ -548,12 +697,28 @@ function wireKeyboard() {
     const editing = inTextField(e.target);
     const accel = e.ctrlKey || e.metaKey;
 
+    if (!editing && e.altKey && !accel && !e.shiftKey) {
+      if (e.key === 'ArrowLeft') {
+        if (viewer.goBack()) e.preventDefault();
+        return;
+      }
+      if (e.key === 'ArrowRight') {
+        if (viewer.goForward()) e.preventDefault();
+        return;
+      }
+    }
+
     // Zoom keys are matched on e.code: the character produced by Shift+0
     // and by +/- varies across keyboard layouts, the physical key does not.
     if (accel && !e.altKey) {
       if (e.code === 'Digit0' || e.code === 'Numpad0') {
         e.preventDefault();
         viewer.setZoom(e.shiftKey ? 'fit-page' : 'fit-width');
+        return;
+      }
+      if (e.shiftKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        cyclePageTone();
         return;
       }
       if (!e.shiftKey) {
@@ -567,6 +732,8 @@ function wireKeyboard() {
           case 'f': e.preventDefault(); search.openSearch(); return;
           case 'o': e.preventDefault(); openViaDialog(); return;
           case 'd': e.preventDefault(); defineSelection(); return;
+          case 'i': e.preventDefault(); openDocInfoModal(); return;
+          case 'p': e.preventDefault(); if (viewer.hasDocument()) window.print(); return;
           case ',': e.preventDefault(); prefsModal.open(); return;
           default: break;
         }
@@ -578,6 +745,20 @@ function wireKeyboard() {
     if (e.key === 'F9') { e.preventDefault(); sidebar.toggle(); return; }
     if (e.key === 'F11') { e.preventDefault(); requestReadMode(!app.readMode); return; }
     if (!viewer.hasDocument()) return;
+
+    if (!accel && !e.altKey) {
+      if (e.key === 'r' || e.key === 'R') {
+        e.preventDefault();
+        viewer.rotateBy(e.shiftKey ? -90 : 90);
+        return;
+      }
+      if (popup.isOpen() && /^[1-9]$/.test(e.key)) {
+        if (popup.selectTab(Number(e.key) - 1)) {
+          e.preventDefault();
+          return;
+        }
+      }
+    }
 
     const container = refs.container();
     const behavior = scrollBehavior();
@@ -638,6 +819,8 @@ function handleCommand({ name, arg }) {
           'Dictionaries could not be added. Existing sources were kept.'));
       break;
     case 'prefs': prefsModal.open(); break;
+    case 'docInfo': openDocInfoModal(); break;
+    case 'print': if (viewer.hasDocument()) window.print(); break;
     case 'search': search.openSearch(); break;
     case 'define': defineSelection(); break;
     case 'sidebar': sidebar.toggle(); break;
@@ -645,6 +828,11 @@ function handleCommand({ name, arg }) {
     case 'zoomOut': viewer.zoomOut(); break;
     case 'fitWidth': viewer.setZoom('fit-width'); break;
     case 'fitPage': viewer.setZoom('fit-page'); break;
+    case 'rotateCw': viewer.rotateBy(90); break;
+    case 'rotateCcw': viewer.rotateBy(-90); break;
+    case 'cyclePageTone': cyclePageTone(); break;
+    case 'historyBack': viewer.goBack(); break;
+    case 'historyForward': viewer.goForward(); break;
     case 'readMode': setReadMode(arg); break;
     default: break;
   }

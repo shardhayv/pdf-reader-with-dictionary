@@ -38,7 +38,7 @@ export function init({ onVisibilityChange } = {}) {
 
   els.thumbs.addEventListener('click', (e) => {
     const item = e.target.closest('[data-thumb-page]');
-    if (item) viewer.goToPage(Number(item.dataset.thumbPage));
+    if (item) viewer.goToPage(Number(item.dataset.thumbPage), { recordHistory: true });
   });
 
   els.outline.addEventListener('click', async (e) => {
@@ -55,7 +55,7 @@ export function init({ onVisibilityChange } = {}) {
     if (dest === undefined) return;
     try {
       const page = await viewer.resolveDestination(dest);
-      if (page) viewer.goToPage(page);
+      if (page) viewer.goToPage(page, { recordHistory: true });
     } catch (error) {
       // A malformed outline must never take the reader down with it. pdf.js
       // normally returns null for bad destinations; this boundary also covers
@@ -67,6 +67,16 @@ export function init({ onVisibilityChange } = {}) {
   viewer.on('documentopened', buildForDocument);
   viewer.on('documentclosed', teardown);
   viewer.on('pagechanged', markCurrentPage);
+  viewer.on('rotationchanged', () => {
+    if (!viewer.hasDocument()) return;
+    state.observer?.disconnect();
+    state.observer = null;
+    for (const url of state.urls.values()) URL.revokeObjectURL(url);
+    state.urls.clear();
+    state.pending.clear();
+    buildThumbnails();
+    markCurrentPage(viewer.currentPage());
+  });
 }
 
 export function isVisible() { return state.visible; }

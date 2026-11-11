@@ -127,11 +127,12 @@ filtering; malformed-IPC resilience; and the absence of any arbitrary-file-read
 path.
 
 **`test/e2e/reader.spec.js`** — opening via command line; second-instance
-focusing; page navigation, zoom modes and shortcuts; bounded page mounting
-across a 300-page document; Latin and Devanagari search including a conjunct
-split across text items; Devanagari selection and copy fidelity asserted at the
-code-point level against Electron's real clipboard (restored afterwards);
-exactly one lookup per selection; stale-response suppression;
+focusing; page navigation, zoom modes and shortcuts; page rotation, reading
+history back/forward, page paper tint, and document properties; bounded page
+mounting across a 300-page document; Latin and Devanagari search including a
+conjunct split across text items; Devanagari selection and copy fidelity
+asserted at the code-point level against Electron's real clipboard (restored
+afterwards); exactly one lookup per selection; stale-response suppression;
 scanned and broken-mapping notices; and per-document state restoration.
 
 **`test/e2e/glossary.spec.js`** — loading through the real dialog, aliases and

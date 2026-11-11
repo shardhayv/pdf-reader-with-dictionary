@@ -9,7 +9,7 @@
  */
 
 import DOMPurify from '../../node_modules/dompurify/dist/purify.es.mjs';
-import { $, esc, show, hide, isShown, announce } from './dom.js';
+import { $, esc, show, hide, isShown, announce, toast } from './dom.js';
 import { icons } from './icons.js';
 
 const SANITIZE_CONFIG = {
@@ -93,22 +93,27 @@ const view = {
 const el = {};
 export function init({ onEntryLookup, onExternalOpen }) {
   el.root = $('popup');
+  el.head = el.root.querySelector('.popup-head');
   el.word = $('popup-word');
   el.body = $('popup-body');
   el.tabs = $('popup-tabs');
   el.back = $('popup-back');
+  el.copy = $('popup-copy');
   el.pin = $('popup-pin');
   el.close = $('popup-close');
   view.onEntryLookup = onEntryLookup;
   view.onExternalOpen = onExternalOpen;
 
   el.back.innerHTML = icons.back;
+  if (el.copy) el.copy.innerHTML = icons.copy;
   el.pin.innerHTML = icons.pin;
   el.close.innerHTML = icons.close;
 
   el.close.addEventListener('click', () => closePopup({ force: true }));
   el.pin.addEventListener('click', togglePin);
   el.back.addEventListener('click', goBack);
+  el.copy?.addEventListener('click', copyDefinition);
+  wireDrag();
 
   el.tabs.addEventListener('click', (e) => {
     const tab = e.target.closest('[data-tab]');
@@ -146,6 +151,73 @@ export function init({ onEntryLookup, onExternalOpen }) {
 
 export function isOpen() { return isShown(el.root); }
 export function isPinned() { return view.pinned; }
+
+export function selectTab(index) {
+  if (!isShown(el.root) || !view.payload?.sources) return false;
+  if (index < 0 || index >= view.payload.sources.length) return false;
+  view.activeTab = index;
+  renderTabs();
+  renderBody();
+  return true;
+}
+
+let copyResetTimer = null;
+async function copyDefinition() {
+  if (!view.payload) return;
+  const bodyText = el.body.innerText.replace(/\b(?:Read more on (?:Wiktionary|Wikipedia)|Search the web)\b.*$/s, '').trim();
+  const text = bodyText ? `${view.payload.word}\n${bodyText}` : view.payload.word;
+  try {
+    await navigator.clipboard.writeText(text);
+    if (el.copy) {
+      el.copy.innerHTML = icons.check;
+      clearTimeout(copyResetTimer);
+      copyResetTimer = setTimeout(() => { if (el.copy) el.copy.innerHTML = icons.copy; }, 1400);
+    }
+    announce(`Copied definition for ${view.payload.word}`);
+  } catch {
+    toast('Could not copy definition to clipboard.');
+  }
+}
+
+function wireDrag() {
+  if (!el.head) return;
+  let dragging = false;
+  let startX = 0;
+  let startY = 0;
+  let origLeft = 0;
+  let origTop = 0;
+
+  el.head.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.target.closest('button')) return;
+    dragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    const rect = el.root.getBoundingClientRect();
+    origLeft = rect.left;
+    origTop = rect.top;
+    el.head.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  el.head.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      if (!view.pinned) togglePin();
+    }
+    const pw = el.root.offsetWidth || 360;
+    const ph = el.root.offsetHeight || 200;
+    const left = Math.max(MARGIN, Math.min(window.innerWidth - pw - MARGIN, origLeft + dx));
+    const top = Math.max(MARGIN, Math.min(window.innerHeight - ph - MARGIN, origTop + dy));
+    el.root.style.left = `${Math.round(left)}px`;
+    el.root.style.top = `${Math.round(top)}px`;
+  });
+
+  const stop = () => { dragging = false; };
+  el.head.addEventListener('pointerup', stop);
+  el.head.addEventListener('pointercancel', stop);
+}
 
 function togglePin() {
   view.pinned = !view.pinned;

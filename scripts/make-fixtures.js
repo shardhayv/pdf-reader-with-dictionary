@@ -317,12 +317,20 @@ function buildDevanagariFixture() {
       '(install fonts-noto-core)');
     return;
   }
-  const r = spawnSync('python3', [script, font, path.join(OUT_DIR, 'devanagari.pdf')], {
-    stdio: ['ignore', 'inherit', 'pipe'], encoding: 'utf8',
-  });
-  if (r.status !== 0) {
-    console.warn('skipped devanagari.pdf — generator failed. Needs python3-gi ' +
-      '(HarfBuzz typelib) and fontTools.');
-    if (r.stderr) console.warn(r.stderr.trim().split('\n').slice(-3).join('\n'));
+  // `python3` on PATH is often a virtualenv without PyGObject, while the
+  // distribution interpreter has it. Try each in turn rather than failing on
+  // the first one that cannot import `gi`.
+  const interpreters = [...new Set(
+    [process.env.GLOSS_PYTHON, 'python3', '/usr/bin/python3'].filter(Boolean))];
+  let lastError = '';
+  for (const python of interpreters) {
+    const r = spawnSync(python, [script, font, path.join(OUT_DIR, 'devanagari.pdf')], {
+      stdio: ['ignore', 'inherit', 'pipe'], encoding: 'utf8',
+    });
+    if (r.status === 0) return;
+    lastError = (r.stderr || r.error?.message || '').trim();
   }
+  console.warn('skipped devanagari.pdf — generator failed. Needs python3-gi ' +
+    '(HarfBuzz typelib) and fontTools; set GLOSS_PYTHON to an interpreter that has them.');
+  if (lastError) console.warn(lastError.split('\n').slice(-3).join('\n'));
 }

@@ -1,7 +1,25 @@
 {
   "name": "gloss",
-  "version": "2.2.0",
-  "description": "A quiet English and Devanagari PDF reader with MDX dictionaries and per-book JSON glossaries",
+  "version": "2.3.0",
+  "description": "A quiet English and Devanagari PDF reader with MDX dictionaries, per-book JSON glossaries, Wiktionary, and Wikipedia lookup",
+  "keywords": [
+    "pdf",
+    "pdf-reader",
+    "pdf-viewer",
+    "dictionary",
+    "mdx",
+    "mdict",
+    "wiktionary",
+    "wikipedia",
+    "glossary",
+    "devanagari",
+    "hindi",
+    "nepali",
+    "sanskrit",
+    "linux",
+    "electron",
+    "desktop"
+  ],
   "author": {
     "name": "Shardhay Vatshyayan",
     "email": "88810695+shardhayv@users.noreply.github.com",
@@ -32,16 +50,16 @@
     "dist:deb": "electron-builder --linux deb"
   },
   "dependencies": {
-    "dompurify": "^3.4.12",
+    "dompurify": "^3.4.17",
     "js-mdict": "^7.0.0",
-    "pdfjs-dist": "^4.9.155"
+    "pdfjs-dist": "^6.5.438"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
-    "electron": "^33.3.1",
-    "electron-builder": "^25.1.8",
-    "eslint": "^10.8.0",
-    "globals": "^17.8.0"
+    "@playwright/test": "^1.65.0",
+    "electron": "^45.3.0",
+    "electron-builder": "^26.18.0",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0"
   },
   "build": {
     "appId": "com.shardhay.gloss",
@@ -71,10 +89,12 @@
       "icon": "build/icons",
       "category": "Office;Viewer",
       "synopsis": "PDF reader with instant dictionary lookup",
-      "description": "Gloss is a quiet English and Devanagari PDF reader for people who read to understand. Select a word or phrase for an immediate definition from local MDX dictionaries or your own per-book JSON glossary.",
+      "description": "Gloss is a quiet English and Devanagari PDF reader for people who read to understand. Select a word or phrase for an immediate definition from local MDX dictionaries, your own per-book JSON glossary, Wiktionary, or Wikipedia.",
       "desktop": {
-        "StartupWMClass": "Gloss",
-        "Keywords": "pdf;reader;dictionary;devanagari;hindi;nepali;viewer;"
+        "entry": {
+          "StartupWMClass": "Gloss",
+          "Keywords": "pdf;reader;dictionary;mdx;wiktionary;wikipedia;glossary;devanagari;hindi;nepali;sanskrit;viewer;"
+        }
       }
     },
     "fileAssociations": [

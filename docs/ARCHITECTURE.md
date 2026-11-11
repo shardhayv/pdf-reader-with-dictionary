@@ -261,7 +261,7 @@ valid copy continues answering lookups.
 
 `main/store.js` owns two files under `app.getPath('userData')`:
 `preferences.json` (settings, window bounds, dictionary list) and
-`documents.json` (per-document page, zoom, and scroll position; recents are
+`documents.json` (per-document page, zoom, rotation, and scroll position; recents are
 derived from it). Writes are debounced and atomic (`tmp` + `rename`), with a
 synchronous flush on quit.
 
@@ -282,7 +282,10 @@ control. It still runs: types are coerced, enums checked, numbers clamped,
 arrays capped, and window bounds intersected against `screen.getDisplayMatching`
 so a stale or hand-edited position cannot reopen the window off-screen.
 
-Renderer writes go through an allowlist of six keys; everything else is
+Renderer writes go through an allowlist of eleven preference keys (`theme`,
+`pageTone`, `sidebarOpen`, `sidebarTab`, `defaultZoom`, `autoLookup`,
+`wiktionaryEnabled`, `wiktionaryFallbackOnly`, `wikipediaEnabled`,
+`wikipediaFallbackOnly`, `wikipediaLang`); everything else is
 main-process-only.
 
 ---
@@ -290,8 +293,8 @@ main-process-only.
 ## Keyboard layering
 
 One `keydown` dispatcher in `app.js`. `Escape` consults an explicit
-topmost-first stack — password prompt, preferences, search, popup, read mode —
-and closes exactly one layer.
+topmost-first stack — password prompt, document properties, preferences,
+search, popup, read mode — and closes exactly one layer.
 
 Zoom shortcuts match on `event.code` (`Digit0`, `Equal`, `Minus`), not
 `event.key`, because the character produced by `Shift+0` and by `+`/`-` varies

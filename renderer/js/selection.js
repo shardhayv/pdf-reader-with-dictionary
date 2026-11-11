@@ -7,7 +7,7 @@
  * (copying) do not auto-trigger; Ctrl+D / the menu force a lookup.
  */
 
-import { isAutoLookupCandidate, collapseWhitespace } from './text.js';
+import { isAutoLookupCandidate, collapseWhitespace, trimEdges, segmentWords } from './text.js';
 
 const FORCE_LOOKUP_MAX_CHARS = 200;
 
@@ -46,6 +46,33 @@ function currentSelection() {
   return { raw, rect: sel.getRangeAt(0).getBoundingClientRect() };
 }
 
+function snapWhitespaceDoubleClick() {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || !selectionInsideTextLayer(sel)) return;
+  if (trimEdges(sel.toString())) return;
+  const node = sel.anchorNode;
+  if (!node || node.nodeType !== Node.TEXT_NODE) return;
+  const text = node.textContent || '';
+  const offset = sel.anchorOffset;
+  const words = segmentWords(text).filter(s => s.isWordLike);
+  if (words.length === 0) return;
+  let best = words[0];
+  let bestDist = Infinity;
+  for (const w of words) {
+    const end = w.index + w.segment.length;
+    const dist = offset < w.index ? w.index - offset : (offset > end ? offset - end : 0);
+    if (dist < bestDist) {
+      best = w;
+      bestDist = dist;
+    }
+  }
+  const range = document.createRange();
+  range.setStart(node, best.index);
+  range.setEnd(node, best.index + best.segment.length);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
 function handlePointerUp(e) {
   if (e.button !== 0) return;
   if (!e.target.closest?.('.pdf-text-layer')) return;
@@ -59,9 +86,16 @@ function handlePointerUp(e) {
   }, SELECTION_SETTLE_MS);
 }
 
+function handleDoubleClick(e) {
+  if (e.button !== 0) return;
+  if (!e.target.closest?.('.pdf-text-layer')) return;
+  snapWhitespaceDoubleClick();
+}
+
 export function attach(container, lookupFn) {
   onLookup = lookupFn;
   container.addEventListener('pointerup', handlePointerUp);
+  container.addEventListener('dblclick', handleDoubleClick);
 }
 
 /** Ctrl+D / View → Look Up Selection: force lookup of any selection. */

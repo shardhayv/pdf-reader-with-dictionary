@@ -162,8 +162,8 @@ function register() {
     assertString(docPath, 4096);
     if (currentDocByContents.get(event.sender.id)?.path !== docPath) return { ok: false };
     if (!patch || typeof patch !== 'object') return { ok: false };
-    const { page, zoomMode, zoomScale, scrollFraction } = patch;
-    store.updateDocState(docPath, { page, zoomMode, zoomScale, scrollFraction });
+    const { page, zoomMode, zoomScale, scrollFraction, rotation } = patch;
+    store.updateDocState(docPath, { page, zoomMode, zoomScale, scrollFraction, rotation });
     return { ok: true };
   }));
 

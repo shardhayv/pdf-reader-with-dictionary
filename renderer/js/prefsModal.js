@@ -312,18 +312,33 @@ function renderLookup() {
 
 function renderAppearance() {
   const prefs = hooks.getPrefs();
-  const radio = (value, label) => `
-    <label><input type="radio" name="theme" value="${value}" ${prefs.theme === value ? 'checked' : ''}> ${label}</label>`;
+  const radio = (name, current, value, label) => `
+    <label><input type="radio" name="${name}" value="${value}" ${current === value ? 'checked' : ''}> ${label}</label>`;
+  const currentTone = prefs.pageTone || 'original';
   els.body.innerHTML = `
     <h3 class="prefs-title">Appearance</h3>
+    <p class="prefs-hint">Choose how the application frame and PDF pages are tinted.</p>
+    <div class="prefs-section-label">Interface theme</div>
     <div class="prefs-radio-group" role="radiogroup" aria-label="Theme">
-      ${radio('system', 'Follow system')}
-      ${radio('light', 'Light')}
-      ${radio('dark', 'Dark')}
-    </div>`;
+      ${radio('theme', prefs.theme, 'system', 'Follow system')}
+      ${radio('theme', prefs.theme, 'light', 'Light')}
+      ${radio('theme', prefs.theme, 'dark', 'Dark')}
+    </div>
+    <div class="prefs-section-label">Page paper tint</div>
+    <div class="prefs-radio-group" role="radiogroup" aria-label="Page paper tint">
+      ${radio('pageTone', currentTone, 'original', 'Original white — exact colours and figures')}
+      ${radio('pageTone', currentTone, 'warm', 'Warm paper — softer daylight stock')}
+      ${radio('pageTone', currentTone, 'sepia', 'Sepia — classic book paper')}
+      ${radio('pageTone', currentTone, 'dark', 'Night page — dark charcoal for low light')}
+    </div>
+    <p class="prefs-hint">You can also cycle the page tint anytime with <code>Ctrl+Shift+D</code> or the toolbar button.</p>`;
   for (const input of els.body.querySelectorAll('[name="theme"]')) {
     input.addEventListener('change', (e) =>
       savePreference({ theme: e.target.value }, renderAppearance));
+  }
+  for (const input of els.body.querySelectorAll('[name="pageTone"]')) {
+    input.addEventListener('change', (e) =>
+      savePreference({ pageTone: e.target.value }, renderAppearance));
   }
 }
 

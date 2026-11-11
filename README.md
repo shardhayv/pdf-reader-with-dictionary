@@ -6,8 +6,8 @@
 
 *Select a word — in English or Devanagari — and its meaning appears in the margin.*
 
-![Electron](https://img.shields.io/badge/Electron-33-47848F?style=flat&logo=electron&logoColor=white)
-![PDF.js](https://img.shields.io/badge/PDF.js-4.10-orange?style=flat)
+![Electron](https://img.shields.io/badge/Electron-45-47848F?style=flat&logo=electron&logoColor=white)
+![PDF.js](https://img.shields.io/badge/PDF.js-6.5-orange?style=flat)
 ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64-E95420?style=flat&logo=linux&logoColor=white)
 ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat)
 
@@ -59,13 +59,17 @@ are no accounts, no telemetry, and no analytics.
 | **Wiktionary meanings** | Optional online dictionary: senses, part of speech, examples, with in-popup cross-references |
 | **Wikipedia fallback** | Optional, in English, Hindi, Nepali, or Maithili |
 | **Search the web** | Opt-out link that opens the word in your browser — the only thing Gloss ever hands a search engine |
+| **Rich definition popup** | Pin, drag anywhere on screen, copy definitions in one click, or switch sources with `1`–`9` |
 | **Big documents** | Only a handful of pages are ever in memory, so a 300-page PDF opens instantly |
 | **Clickable links** | Link annotations open in your browser or jump within the document; double-click still defines the word |
+| **Reading history** | Jump to an internal link, outline heading, or search hit and return with `Alt+←` / `Alt+→` |
 | **Find in document** | Unicode-aware search with result counts and highlighting |
 | **Pages and outline** | Lazy thumbnail sidebar and the document's own table of contents |
-| **Zoom** | Fit width, fit page, and free zoom with `Ctrl`+wheel anchored under the cursor |
-| **Picks up where you left off** | Page, zoom, and scroll position are remembered per document |
-| **Reads like a native app** | Drag-and-drop, file associations, recent documents, remembered window position |
+| **Zoom & rotation** | Fit width, fit page, free zoom with `Ctrl`+wheel anchored under the cursor, and per-book 90° rotation (`R`) |
+| **Page paper tint** | Read on Original, Warm paper, Sepia, or inverted Night page (`Ctrl+Shift+D`) to reduce eye strain |
+| **Document info & print** | Inspect PDF metadata, page dimensions, and file size (`Ctrl+I`), or print (`Ctrl+P`) |
+| **Picks up where you left off** | Page, zoom, rotation, and scroll position are remembered per document |
+| **Reads like a native app** | Drag-and-drop, file associations, recent documents, reading progress bar, remembered window position |
 | **Light, dark, or system** | Plus reduced-motion support and full keyboard access |
 
 ---
@@ -123,7 +127,7 @@ npm run dist:dir        # unpacked build into dist/linux-unpacked/
 Install and run the `.deb`:
 
 ```bash
-sudo apt install ./dist/gloss_2.2.0_amd64.deb
+sudo apt install ./dist/gloss_2.3.0_amd64.deb
 gloss                      # or launch from your applications menu
 gloss ~/Documents/paper.pdf
 ```
@@ -178,10 +182,16 @@ for Ubuntu and Debian.
 | `Ctrl+F` | Find in document |
 | `Enter` / `Shift+Enter` | Next / previous result (in the find bar) |
 | `Ctrl+D` | Look up the current selection |
+| `1`–`9` | Switch dictionary source tabs (when popup is open) |
 | `Ctrl` `+` / `-` | Zoom in / out |
 | `Ctrl+0` | Fit width |
 | `Ctrl+Shift+0` | Fit page |
 | `Ctrl` + mouse wheel | Zoom around the cursor |
+| `R` / `Shift+R` | Rotate clockwise / counter-clockwise |
+| `Alt+←` / `Alt+→` | Back / forward in reading history |
+| `Ctrl+Shift+D` | Cycle page paper tint (Original / Warm / Sepia / Night) |
+| `Ctrl+I` | Document properties |
+| `Ctrl+P` | Print |
 | `F9` | Pages and outline sidebar |
 | `F11` | Read mode |
 | `Ctrl+,` | Preferences |
@@ -292,12 +302,12 @@ pdf-reader-with-dictionary/
 
 | Package | Version | Role |
 |---|---|---|
-| [Electron](https://www.electronjs.org/) | 33 | Desktop shell and process model |
-| [PDF.js](https://mozilla.github.io/pdf.js/) | 4.10 | PDF parsing, rendering, text layer |
+| [Electron](https://www.electronjs.org/) | 45 | Desktop shell and process model |
+| [PDF.js](https://mozilla.github.io/pdf.js/) | 6.5 | PDF parsing, rendering, text layer |
 | [js-mdict](https://github.com/terasum/js-mdict) | 7 | MDX dictionary parsing |
-| [DOMPurify](https://github.com/cure53/DOMPurify) | 3 | Sanitizing untrusted dictionary HTML |
-| [electron-builder](https://www.electron.build/) | 25 | AppImage and Debian packaging |
-| [Playwright](https://playwright.dev/) | 1.62 | Electron integration tests |
+| [DOMPurify](https://github.com/cure53/DOMPurify) | 3.4 | Sanitizing untrusted dictionary HTML |
+| [electron-builder](https://www.electron.build/) | 26 | AppImage and Debian packaging |
+| [Playwright](https://playwright.dev/) | 1.65 | Electron integration tests |
 
 No frontend framework and no bundler — plain ES modules in the renderer.
 

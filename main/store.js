@@ -20,15 +20,18 @@ const MAX_TRACKED_DOCUMENTS = 60;
 const MAX_RECENTS = 10;
 
 const THEMES = new Set(['system', 'light', 'dark']);
+const PAGE_TONES = new Set(['original', 'warm', 'sepia', 'dark']);
 const WIKI_LANGS = new Set(['en', 'hi', 'ne', 'mai']);
 const ZOOM_MODES = new Set(['fit-width', 'fit-page', 'custom']);
 const SIDEBAR_TABS = new Set(['thumbnails', 'outline']);
+const ROTATIONS = new Set([0, 90, 180, 270]);
 
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 4;
 
 const PREF_DEFAULTS = Object.freeze({
   theme: 'system',
+  pageTone: 'original',
   wiktionaryEnabled: true,
   wiktionaryAsFallback: true,
   wikipediaEnabled: true,
@@ -43,7 +46,7 @@ const PREF_DEFAULTS = Object.freeze({
 
 /** Keys the renderer may write through prefs:set. */
 const RENDERER_WRITABLE = new Set([
-  'theme', 'wikipediaEnabled', 'wikipediaAsFallback', 'wikipediaLang',
+  'theme', 'pageTone', 'wikipediaEnabled', 'wikipediaAsFallback', 'wikipediaLang',
   'wiktionaryEnabled', 'wiktionaryAsFallback', 'webSearchLinkEnabled',
   'sidebarVisible', 'sidebarTab',
 ]);
@@ -85,6 +88,7 @@ function sanitizePrefs(raw) {
   }
   return {
     theme: asEnum(src.theme, THEMES, d.theme),
+    pageTone: asEnum(src.pageTone, PAGE_TONES, d.pageTone),
     wiktionaryEnabled: asBool(src.wiktionaryEnabled, d.wiktionaryEnabled),
     wiktionaryAsFallback: asBool(src.wiktionaryAsFallback, d.wiktionaryAsFallback),
     wikipediaEnabled: asBool(src.wikipediaEnabled, d.wikipediaEnabled),
@@ -109,6 +113,7 @@ function sanitizeDocState(raw) {
     zoomMode: asEnum(src.zoomMode, ZOOM_MODES, 'fit-width'),
     zoomScale: clampNum(src.zoomScale, ZOOM_MIN, ZOOM_MAX, 1),
     scrollFraction: clampNum(src.scrollFraction, 0, 1, 0),
+    rotation: ROTATIONS.has(src.rotation) ? src.rotation : 0,
     lastOpened: clampNum(src.lastOpened, 0, 8.64e15, Date.now()),
   };
 }
