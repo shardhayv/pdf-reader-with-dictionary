@@ -128,6 +128,10 @@ Prebuilt releases for Linux and Windows are available directly on the [GitHub Re
 - **Linux**:
   - `gloss_2.4.0_amd64.deb` — Debian/Ubuntu package with desktop integration and sandboxing.
 
+> [!NOTE]
+> **Why is the package size ~117–146 MB?**
+> The core reader executable itself is lightweight (~60 MB). The release packages include **63+ MB of offline dictionary databases (361,000+ entries)** across 10 academic and domain categories plus Devanagari Hindi/Sanskrit and Nepali lexicons pre-bundled into `resources/dictionaries`. This ensures Gloss is 100% plug-and-play offline from the very first launch, with zero setup or additional downloads required.
+
 ### Build from source
 
 ```bash
