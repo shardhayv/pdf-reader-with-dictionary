@@ -48,7 +48,10 @@
     "dist": "electron-builder --linux",
     "dist:dir": "electron-builder --linux dir",
     "dist:appimage": "electron-builder --linux AppImage",
-    "dist:deb": "electron-builder --linux deb"
+    "dist:deb": "electron-builder --linux deb",
+    "dist:win": "electron-builder --win",
+    "dist:win:nsis": "electron-builder --win nsis",
+    "dist:win:portable": "electron-builder --win portable"
   },
   "dependencies": {
     "dompurify": "^3.4.17",
@@ -82,6 +85,33 @@
     "asarUnpack": [
       "node_modules/pdfjs-dist/**"
     ],
+    "extraResources": [
+      {
+        "from": "bundled-dictionaries",
+        "to": "dictionaries",
+        "filter": [
+          "*.json"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Gloss",
+      "artifactName": "${productName}-${version}-Setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-Portable.${ext}"
+    },
     "linux": {
       "target": [
         "AppImage",

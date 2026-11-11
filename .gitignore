@@ -11,6 +11,9 @@ out/
 # Generated from assets/icon.png by scripts/make-icons.js
 build/icons/
 
+# Bundled dictionaries for offline release packaging
+bundled-dictionaries/
+
 # Electron builder cache
 .cache/
 electron-builder-cache/

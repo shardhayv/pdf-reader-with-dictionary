@@ -8,7 +8,7 @@
 
 ![Electron](https://img.shields.io/badge/Electron-45-47848F?style=flat&logo=electron&logoColor=white)
 ![PDF.js](https://img.shields.io/badge/PDF.js-6.5-orange?style=flat)
-![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64-E95420?style=flat&logo=linux&logoColor=white)
+![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-E95420?style=flat&logo=linux&logoColor=white)
 ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat)
 
 Created and maintained by **[Shardhay Vatshyayan](https://github.com/shardhayv)**.
@@ -117,16 +117,32 @@ this up correctly at install time and need no such step.
 
 ---
 
-## Packaging
+## Packaging & Downloads
+
+Prebuilt releases for Linux and Windows are available directly on the [GitHub Releases](https://github.com/shardhayv/pdf-reader-with-dictionary/releases) page:
+
+- **Windows**:
+  - `Gloss-2.4.0-Setup.exe` — Full Windows installer with start menu & desktop shortcuts and PDF file association.
+  - `Gloss-2.4.0-Portable.exe` — Standalone portable executable (runs from anywhere, e.g. USB drive, no installation required).
+  - *Both Windows builds come **pre-bundled with all 12 offline dictionaries** (`361,000+` entries) ready to use on first launch.*
+- **Linux**:
+  - `gloss_2.4.0_amd64.deb` — Debian/Ubuntu package with desktop integration and sandboxing.
+
+### Build from source
 
 ```bash
-npm run dist            # AppImage + .deb into dist/
-npm run dist:deb        # .deb only  (recommended on Debian/Ubuntu)
+# Linux
+npm run dist:deb        # Debian/Ubuntu package (.deb)
 npm run dist:appimage   # AppImage only
-npm run dist:dir        # unpacked build into dist/linux-unpacked/
+npm run dist            # AppImage + .deb
+
+# Windows (builds on Linux via Wine/makensis or natively on Windows)
+npm run dist:win        # Both NSIS installer and Portable .exe
+npm run dist:win:nsis   # NSIS installer (.exe)
+npm run dist:win:portable # Portable single-file executable (.exe)
 ```
 
-Install and run the `.deb` (or download `gloss_2.4.0_amd64.deb` directly from the [GitHub Releases](https://github.com/shardhayv/pdf-reader-with-dictionary/releases) page):
+Install and run the `.deb` on Ubuntu/Debian:
 
 ```bash
 sudo apt install ./dist/gloss_2.4.0_amd64.deb
@@ -343,8 +359,7 @@ No frontend framework and no bundler — plain ES modules in the renderer.
   the glossary builder recovers conservative Devanagari/hyphenated splits, but
   a spurious inserted space can still affect an exact-phrase search.
 - **AppImage sandboxing on Ubuntu 24.04+** — see the packaging note above.
-- **Linux x86_64 only** in this release. Nothing in the code is Linux-specific,
-  but no other platform has been built or tested.
+- **Linux x86_64 and Windows x64** supported in this release.
 
 ---
 

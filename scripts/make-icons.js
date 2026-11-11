@@ -35,6 +35,13 @@ function main() {
       fs.writeFileSync(path.join(OUT, `${size}x${size}.png`), resized.toPNG());
     }
     console.log(`wrote ${SIZES.length} icons to build/icons/`);
+    const { spawnSync } = require('child_process');
+    const icoPath = path.join(__dirname, '..', 'build', 'icon.ico');
+    const icoSizes = [256, 128, 64, 48, 32, 16].map(s => path.join(OUT, `${s}x${s}.png`));
+    const conv = spawnSync('convert', [...icoSizes, icoPath]);
+    if (conv.status === 0) {
+      console.log('wrote Windows icon to build/icon.ico');
+    }
     app.quit();
   });
 }

@@ -20,6 +20,8 @@
 
 const fs = require('fs');
 const path = require('path');
+let app;
+try { ({ app } = require('electron')); } catch { app = null; }
 const store = require('./store');
 const { Glossary, isGlossaryPath } = require('./glossary');
 
@@ -144,12 +146,54 @@ async function loadMany(filePaths, { enabledFlags = {}, persistAfter = true } = 
   return results;
 }
 
+/** Find pre-bundled offline dictionaries shipped with the app package. */
+function getBundledDictionaryPaths() {
+  const dirs = [];
+  if (process.resourcesPath) {
+    dirs.push(path.join(process.resourcesPath, 'dictionaries'));
+  }
+  if (typeof app?.getAppPath === 'function') {
+    dirs.push(path.join(app.getAppPath(), 'bundled-dictionaries'));
+  }
+  for (const dir of dirs) {
+    try {
+      if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+        const files = fs.readdirSync(dir)
+          .filter(f => f.endsWith('.json'))
+          .sort()
+          .map(f => path.join(dir, f));
+        if (files.length > 0) return files;
+      }
+    } catch { /* ignore */ }
+  }
+  return [];
+}
+
 /** Restore saved dictionaries (called after the window is shown). */
 async function restoreFromPrefs() {
   const { order, enabled } = store.getPrefs().dictionaries;
-  const existing = order.filter(p => fs.existsSync(p));
-  if (existing.length === 0) return [];
-  return await loadMany(existing, { enabledFlags: enabled, persistAfter: true });
+  const bundled = getBundledDictionaryPaths();
+  const bundledByBase = new Map(bundled.map(p => [path.basename(p), p]));
+
+  const resolved = [];
+  for (const p of order) {
+    if (fs.existsSync(p)) {
+      resolved.push(p);
+    } else {
+      const base = path.basename(p);
+      if (bundledByBase.has(base)) {
+        resolved.push(bundledByBase.get(base));
+      }
+    }
+  }
+
+  // If first launch or no dictionaries configured, auto-seed bundled dictionaries
+  if (resolved.length === 0 && bundled.length > 0) {
+    for (const b of bundled) resolved.push(b);
+  }
+
+  if (resolved.length === 0) return [];
+  return await loadMany(resolved, { enabledFlags: enabled, persistAfter: true });
 }
 
 function list(document = null) {
