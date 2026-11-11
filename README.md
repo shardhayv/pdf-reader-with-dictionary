@@ -150,9 +150,20 @@ for Ubuntu and Debian.
 1. **Open a PDF** — the toolbar button, `Ctrl+O`, drag a file onto the window,
    pass a path on the command line, or open it from your file manager.
 2. **Add dictionaries** — Preferences → Dictionaries → *Add dictionaries…* and
-   pick one or more lawfully obtained `.mdx` files. Open, public-domain, and
-   personally licensed dictionaries can all be used; Gloss does not bundle or
-   redistribute dictionary data.
+   pick one or more lawfully obtained `.mdx` files or global `.json` glossaries.
+   Open, public-domain, and personally licensed dictionaries can all be used;
+   Gloss does not bundle or redistribute dictionary data in its packages.
+
+   To download and auto-register a complete suite of **10 offline category-wise
+   dictionaries** (Computer Science & AI, Philosophy & Logic, Economics &
+   Finance, Politics & Law, History & Civilizations, Biology & Medicine,
+   Chemistry & Materials, Mathematics & Physics, Psychology & Linguistics, and
+   General English WordNet 3.1 — compiled from peer-edited Wikipedia academic
+   glossaries and Princeton WordNet 3.1):
+
+   ```bash
+   npm run dictionaries
+   ```
 
    You can also add a **per-book glossary** — a small JSON file for the words a
    general dictionary cannot help with. Build a draft from the book itself:

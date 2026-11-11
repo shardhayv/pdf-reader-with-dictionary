@@ -43,6 +43,7 @@
     "test:e2e": "playwright test",
     "fixtures": "node scripts/make-fixtures.js",
     "glossary": "node scripts/make-glossary.js",
+    "dictionaries": "python3 scripts/download-dictionaries.py",
     "icons": "electron scripts/make-icons.js",
     "dist": "electron-builder --linux",
     "dist:dir": "electron-builder --linux dir",
