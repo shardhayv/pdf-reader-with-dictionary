@@ -176,19 +176,40 @@ export function syncSaveState() {
   el.save.title = saved ? 'Remove from saved vocabulary (S)' : 'Save word to vocabulary (S)';
 }
 
+/**
+ * The definition as plain text — just the definition.
+ *
+ * The popup body also holds its own furniture: the source badge, the "Read
+ * more" and "Search the web" links, status lines. Reading innerText of the
+ * whole body and pattern-matching those back out was fragile (the badge is
+ * upper-cased by CSS, so innerText returned it upper-cased and the match
+ * missed). Instead that furniture is hidden for the instant the text is
+ * read; innerText skips hidden elements and still lays out lists and
+ * paragraphs on their own lines.
+ */
+function definitionText() {
+  el.body.classList.add('popup-body--plain');
+  try {
+    return el.body.innerText.replace(/\n{3,}/g, '\n\n').trim();
+  } finally {
+    el.body.classList.remove('popup-body--plain');
+  }
+}
+
+function activeSource() {
+  const sources = view.payload?.sources || [];
+  return sources[Math.min(view.activeTab, Math.max(0, sources.length - 1))] || null;
+}
+
 export async function toggleSaveCurrentWord() {
   if (!view.payload?.word || !view.onToggleSaveWord) return false;
-  const sources = view.payload.sources || [];
-  const active = sources[Math.min(view.activeTab, Math.max(0, sources.length - 1))];
-  const sourceLabel = active ? tabLabel(active) : '';
-  const bodyText = el.body.innerText
-    .replace(/\b(?:Read more on (?:Wiktionary|Wikipedia)|Search the web)\b.*$/s, '')
-    .replace(new RegExp(`^${sourceLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*`), '')
-    .trim();
+  // Nothing worth keeping while the answer is still on its way.
+  if (view.payload.phase === 'loading') return false;
+  const source = activeSource();
   await view.onToggleSaveWord({
     word: view.payload.word,
-    definition: bodyText.slice(0, 600),
-    source: sourceLabel,
+    definition: definitionText().slice(0, 600),
+    source: source ? sourceLabel(source) : '',
   });
   syncSaveState();
   return true;
@@ -197,7 +218,7 @@ export async function toggleSaveCurrentWord() {
 let copyResetTimer = null;
 async function copyDefinition() {
   if (!view.payload) return;
-  const bodyText = el.body.innerText.replace(/\b(?:Read more on (?:Wiktionary|Wikipedia)|Search the web)\b.*$/s, '').trim();
+  const bodyText = definitionText();
   const text = bodyText ? `${view.payload.word}\n${bodyText}` : view.payload.word;
   try {
     await navigator.clipboard.writeText(text);
@@ -207,7 +228,8 @@ async function copyDefinition() {
       copyResetTimer = setTimeout(() => { if (el.copy) el.copy.innerHTML = icons.copy; }, 1400);
     }
     announce(`Copied definition for ${view.payload.word}`);
-  } catch {
+  } catch (error) {
+    console.error('Gloss could not copy the definition:', error);
     toast('Could not copy definition to clipboard.');
   }
 }
@@ -302,6 +324,21 @@ function position(anchorRect) {
   el.root.style.left = `${Math.round(left)}px`;
 }
 
+/**
+ * Pull the popup back inside the window after the window shrinks. A pinned
+ * or dragged popup keeps the spot the reader chose as far as that is still
+ * on screen; an unpinned one is simply re-anchored to its word.
+ */
+export function keepInView() {
+  if (!isShown(el.root)) return;
+  if (!view.pinned) { position(null); return; }
+  const rect = el.root.getBoundingClientRect();
+  const left = Math.max(MARGIN, Math.min(rect.left, window.innerWidth - rect.width - MARGIN));
+  const top = Math.max(MARGIN, Math.min(rect.top, window.innerHeight - rect.height - MARGIN));
+  el.root.style.left = `${Math.round(left)}px`;
+  el.root.style.top = `${Math.round(top)}px`;
+}
+
 // ── Rendering ─────────────────────────────────────────────────────────────────
 
 /**
@@ -347,10 +384,11 @@ function renderAll() {
   renderBody();
 }
 
-function tabLabel(source) {
-  if (source.kind === 'wiki') return `Wikipedia (${esc(source.lang)})`;
+/** A source's name as plain text. Escape it at the point of use, once. */
+function sourceLabel(source) {
+  if (source.kind === 'wiki') return `Wikipedia (${source.lang})`;
   if (source.kind === 'wiktionary') return 'Wiktionary';
-  return esc(source.dictName || 'Dictionary');
+  return source.dictName || 'Dictionary';
 }
 
 /** Google's "define" query is the one users reach for; keep that intent. */
@@ -387,7 +425,7 @@ function renderWiktionary(source) {
   return `
     <span class="source-badge source-badge--wikt">${icons.book}Wiktionary</span>
     <div class="wikt-body">${body}</div>
-    <a class="def-link def-link--external" role="link" tabindex="0"
+    <a class="def-link def-link--external popup-more" role="link" tabindex="0"
        data-external="${esc(source.url)}">Read more on Wiktionary ${icons.external}</a>`;
 }
 
@@ -413,7 +451,8 @@ function renderTabs() {
   show(el.tabs);
   el.tabs.innerHTML = sources.map((s, i) =>
     `<button class="popup-tab${i === view.activeTab ? ' popup-tab--active' : ''}"
-             role="tab" aria-selected="${i === view.activeTab}" data-tab="${i}">${tabLabel(s)}</button>`
+             role="tab" aria-selected="${i === view.activeTab}" data-tab="${i}"
+             title="${esc(sourceLabel(s))}${i < 9 ? ` (${i + 1})` : ''}">${esc(sourceLabel(s))}</button>`
   ).join('');
 }
 
@@ -436,7 +475,7 @@ function renderBody() {
       parts.push(`
         <span class="source-badge source-badge--wiki">${icons.globe}Wikipedia</span>
         <p class="popup-extract">${esc(source.extract)}</p>
-        <a class="def-link def-link--external" role="link" tabindex="0"
+        <a class="def-link def-link--external popup-more" role="link" tabindex="0"
            data-external="${esc(source.url)}">Read more on Wikipedia ${icons.external}</a>`);
     } else {
       const badgeIcon = source.dictKind === 'glossary' ? icons.bookmark : icons.book;
@@ -480,6 +519,8 @@ function renderBody() {
 
   el.body.innerHTML = parts.join('');
   el.body.scrollTop = 0;
+  // Switching to a longer source can push a pinned popup past the window edge.
+  if (view.pinned) keepInView();
 }
 
 /** Announce results for screen readers (called once per completed lookup). */

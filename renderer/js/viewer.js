@@ -8,7 +8,7 @@
  */
 
 import * as pdfjsLib from '../../node_modules/pdfjs-dist/build/pdf.mjs';
-import { refs, debounce } from './dom.js';
+import { refs, debounce, prefersReducedMotion } from './dom.js';
 import { assessTextQuality, graphemes } from './text.js';
 
 const PDFJS_BASE = new URL('../../node_modules/pdfjs-dist/', import.meta.url);
@@ -20,8 +20,12 @@ export const ZOOM_MIN = 0.25;
 export const ZOOM_MAX = 4;
 export const ZOOM_STEP = 1.1;
 const MAX_CANVAS_PIXELS = 16 * 1024 * 1024; // per-page device-pixel budget
-const PAGE_HORIZONTAL_MARGIN = 48;          // must match --page-margin CSS total
+const SPREAD_COLUMN_GAP = 16;               // must match .pages--spread column-gap
 const RERENDER_DEBOUNCE_MS = 140;
+// A page becomes "the current page" once this much of it is on screen…
+const CURRENT_PAGE_MIN_FRACTION = 0.08;
+// …or, for a page far taller than the window, once it fills this much of it.
+const CURRENT_PAGE_MIN_VIEWPORT = 0.33;
 const QUALITY_SAMPLE_PAGES = 4;
 
 const state = {
@@ -45,11 +49,10 @@ const state = {
   pageDims: new Map(),     // page -> {w, h} at scale 1, current rotation
   renderTasks: new Map(),  // page -> RenderTask
   textCache: new Map(),    // page -> { text, items: [{start, end}] }
-  visiblePages: new Set(),
-  historyBack: [],         // [{ page, scrollTop }]
-  historyForward: [],      // [{ page, scrollTop }]
-  pageObserver: null,
+  historyBack: [],         // [{ page, offset }] — see readingPosition()
+  historyForward: [],      // [{ page, offset }]
   lazyObserver: null,
+  scrollFrame: 0,
 };
 
 const listeners = new Map();
@@ -92,14 +95,28 @@ function dimsFor(n) {
   return state.pageDims.get(n) || { w: state.baseWidth, h: state.baseHeight };
 }
 
+/**
+ * Space around the pages, read from the stylesheet rather than duplicated
+ * here: the gutters narrow on small windows, and a constant that drifted
+ * from the CSS would leave "fit width" a few pixels too wide.
+ */
+function pageGutters() {
+  const style = getComputedStyle(refs.pages());
+  return {
+    horizontal: (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0),
+    vertical: (parseFloat(style.paddingTop) || 0) + 28,
+  };
+}
+
 function computeFitScale(mode) {
   const container = refs.container();
-  const availW = Math.max(120, container.clientWidth - PAGE_HORIZONTAL_MARGIN);
+  const gutters = pageGutters();
+  const availW = Math.max(120, container.clientWidth - gutters.horizontal);
   const cols = state.spreadMode === 'two-page' && state.total > 1 ? 2 : 1;
-  const colGap = cols === 2 ? 16 : 0;
+  const colGap = cols === 2 ? SPREAD_COLUMN_GAP : 0;
   const widthScale = Math.max(60, availW - colGap) / (state.baseWidth * cols);
   if (mode === 'fit-page') {
-    const availH = Math.max(120, container.clientHeight - 40);
+    const availH = Math.max(120, container.clientHeight - gutters.vertical);
     return Math.min(widthScale, availH / state.baseHeight);
   }
   return widthScale;
@@ -218,23 +235,79 @@ function buildPlaceholders() {
   pages.replaceChildren(frag);
 }
 
+/**
+ * Index of the first page whose bottom edge lies below content offset `y`.
+ * Wrappers are laid out top to bottom, so a binary search finds it without
+ * touching more than a dozen of them even in a thousand-page book.
+ */
+function firstPageEndingAfter(y) {
+  const pages = refs.pages().children;
+  let lo = 0;
+  let hi = pages.length - 1;
+  let answer = Math.max(0, pages.length - 1);
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const wrapper = pages[mid];
+    if (wrapper.offsetTop + wrapper.offsetHeight > y) {
+      answer = mid;
+      hi = mid - 1;
+    } else {
+      lo = mid + 1;
+    }
+  }
+  return answer;
+}
+
+/**
+ * Recompute the current page from the scroll position.
+ *
+ * The current page is the first one with a meaningful slice on screen. This
+ * is derived from geometry rather than an IntersectionObserver threshold
+ * because a threshold is a fraction of the *page*: zoom far enough into a
+ * large sheet and no amount of scrolling ever shows 8% of it, so the page
+ * number froze.
+ */
+function updateCurrentPage() {
+  if (!state.doc) return;
+  const container = refs.container();
+  const pages = refs.pages().children;
+  if (pages.length === 0) return;
+
+  const top = container.scrollTop;
+  const viewHeight = container.clientHeight;
+  let index = firstPageEndingAfter(top);
+  for (; index < pages.length - 1; index++) {
+    const wrapper = pages[index];
+    const visible = Math.min(wrapper.offsetTop + wrapper.offsetHeight, top + viewHeight) -
+      Math.max(wrapper.offsetTop, top);
+    const needed = Math.min(wrapper.offsetHeight * CURRENT_PAGE_MIN_FRACTION,
+      viewHeight * CURRENT_PAGE_MIN_VIEWPORT);
+    if (visible >= needed) break;
+  }
+  const next = index + 1;
+  if (next !== state.current) {
+    state.current = next;
+    emit('pagechanged', next);
+  }
+}
+
+function onContainerScroll() {
+  if (state.scrollFrame) return;
+  state.scrollFrame = requestAnimationFrame(() => {
+    state.scrollFrame = 0;
+    updateCurrentPage();
+  });
+}
+
+let scrollTrackingAttached = false;
+
 function setupObservers() {
   const container = refs.container();
 
-  state.pageObserver = new IntersectionObserver((entries) => {
-    for (const entry of entries) {
-      const n = Number(entry.target.dataset.pageNumber);
-      if (entry.isIntersecting) state.visiblePages.add(n);
-      else state.visiblePages.delete(n);
-    }
-    if (state.visiblePages.size > 0) {
-      const next = Math.min(...state.visiblePages);
-      if (next !== state.current) {
-        state.current = next;
-        emit('pagechanged', next);
-      }
-    }
-  }, { root: container, threshold: 0.08 });
+  if (!scrollTrackingAttached) {
+    scrollTrackingAttached = true;
+    container.addEventListener('scroll', onContainerScroll, { passive: true });
+  }
 
   state.lazyObserver = new IntersectionObserver((entries) => {
     let nearest = null;
@@ -251,7 +324,6 @@ function setupObservers() {
   }, { root: container, rootMargin: '600px 0px 600px 0px', threshold: 0 });
 
   for (const wrapper of refs.pages().children) {
-    state.pageObserver.observe(wrapper);
     state.lazyObserver.observe(wrapper);
   }
 }
@@ -512,12 +584,74 @@ const rerenderVisibleDebounced = debounce(() => {
 }, RERENDER_DEBOUNCE_MS);
 
 /**
- * Set zoom. anchor (viewport-relative {x, y}) defaults to the container
- * center; wheel zoom passes the cursor so the point under it stays put.
+ * Remember what sits under a point of the viewport, as a position *within a
+ * page* — so it can be put back after the pages change size.
+ *
+ * Scaling the scroll offset by the zoom ratio looks equivalent and is not:
+ * the gaps between pages and the padding around them do not scale. Two
+ * hundred pages into a book that fixed space adds up to several hundred
+ * pixels, so every zoom step — and every window resize in a fit mode —
+ * visibly threw the reader off their place.
+ *
+ * @param {{x:number, y:number}|'top'|null} anchor  client coordinates, the
+ *        top edge of the viewport, or (null) its centre.
+ */
+function captureAnchor(anchor) {
+  const container = refs.container();
+  const pages = refs.pages().children;
+  const rect = container.getBoundingClientRect();
+  let offsetX = container.clientWidth / 2;
+  let offsetY = container.clientHeight / 2;
+  if (anchor === 'top') {
+    offsetY = 0;
+  } else if (anchor && typeof anchor === 'object') {
+    offsetX = anchor.x - rect.left;
+    offsetY = anchor.y - rect.top;
+  }
+  if (pages.length === 0) return null;
+
+  const contentX = container.scrollLeft + offsetX;
+  const contentY = container.scrollTop + offsetY;
+  let wrapper = pages[firstPageEndingAfter(contentY)];
+  // In a two-page spread both pages of a row end at the same height; take
+  // the one the pointer is actually over.
+  const sibling = wrapper.nextElementSibling;
+  if (sibling && sibling.offsetTop === wrapper.offsetTop && contentX >= sibling.offsetLeft) {
+    wrapper = sibling;
+  }
+  // Inside the page the position is a fraction of the page, which scales
+  // with it. In the gap beside a page it is a pixel distance from the nearest
+  // edge, which does not — otherwise a resize at the very top of a document
+  // would "scale" the 12px of padding above page 1 and nudge the scroll.
+  const along = (distance, size) => {
+    if (size <= 0 || distance < 0) return { fraction: 0, pixels: Math.min(0, distance) };
+    if (distance > size) return { fraction: 1, pixels: distance - size };
+    return { fraction: distance / size, pixels: 0 };
+  };
+  return {
+    wrapper,
+    offsetX,
+    offsetY,
+    x: along(contentX - wrapper.offsetLeft, wrapper.offsetWidth),
+    y: along(contentY - wrapper.offsetTop, wrapper.offsetHeight),
+  };
+}
+
+/** Scroll so the point captured by captureAnchor() is back where it was. */
+function restoreAnchor(captured) {
+  if (!captured || !captured.wrapper.isConnected) return;
+  const container = refs.container();
+  const { wrapper, offsetX, offsetY, x, y } = captured;
+  container.scrollTop = wrapper.offsetTop + y.fraction * wrapper.offsetHeight + y.pixels - offsetY;
+  container.scrollLeft = wrapper.offsetLeft + x.fraction * wrapper.offsetWidth + x.pixels - offsetX;
+}
+
+/**
+ * Set zoom. `anchor` is the point that stays put: wheel zoom passes the
+ * cursor, a window resize passes 'top', and the default is the centre.
  */
 export function setZoom(mode, explicitScale = null, anchor = null) {
   if (!state.doc) return;
-  const container = refs.container();
 
   let newScale;
   if (mode === 'custom') {
@@ -529,14 +663,9 @@ export function setZoom(mode, explicitScale = null, anchor = null) {
   const modeChanged = mode !== state.zoomMode;
   if (!modeChanged && Math.abs(ratio - 1) < 0.0005) return;
 
+  const captured = captureAnchor(anchor);
   state.zoomMode = mode;
   state.zoomScale = newScale;
-
-  const rect = container.getBoundingClientRect();
-  const anchorY = anchor ? anchor.y - rect.top : container.clientHeight / 2;
-  const anchorX = anchor ? anchor.x - rect.left : container.clientWidth / 2;
-  const targetScrollTop = (container.scrollTop + anchorY) * ratio - anchorY;
-  const targetScrollLeft = (container.scrollLeft + anchorX) * ratio - anchorX;
 
   for (const wrapper of refs.pages().children) {
     const n = Number(wrapper.dataset.pageNumber);
@@ -559,8 +688,8 @@ export function setZoom(mode, explicitScale = null, anchor = null) {
     }
   }
 
-  container.scrollTop = targetScrollTop;
-  container.scrollLeft = targetScrollLeft;
+  restoreAnchor(captured);
+  updateCurrentPage();
 
   emit('zoomchanged', { mode: state.zoomMode, scale: state.zoomScale });
   rerenderVisibleDebounced();
@@ -653,24 +782,61 @@ export function removeBookmark(n) {
   return true;
 }
 
-/** Recompute fit scales after a container resize. */
+/**
+ * Recompute fit scales after the reading area changes size (window resize,
+ * sidebar, find bar, read mode). The line at the top of the viewport is the
+ * one the reader is on, so that is what stays put.
+ */
 export function handleResize() {
   if (!state.doc) return;
   if (state.zoomMode === 'fit-width' || state.zoomMode === 'fit-page') {
-    setZoom(state.zoomMode);
+    setZoom(state.zoomMode, null, 'top');
   }
+  updateCurrentPage();
 }
 
 // ── Navigation & Reading History ──────────────────────────────────────────────
 
 const MAX_HISTORY = 40;
 
+/**
+ * Where the top edge of the viewport sits, as a page number and how far down
+ * that page it is (a fraction of the page's height; slightly negative while
+ * the gap above the page is at the top).
+ *
+ * This is the durable form of "where am I": unlike a pixel offset or a
+ * fraction of the whole scroll height it means the same thing after the zoom
+ * level, window size or sidebar changes.
+ */
+export function readingPosition() {
+  const container = refs.container();
+  const pages = refs.pages().children;
+  if (!state.doc || pages.length === 0) return { page: 1, offset: 0 };
+  const top = container.scrollTop;
+  const index = firstPageEndingAfter(top);
+  const wrapper = pages[index];
+  const offset = wrapper.offsetHeight > 0 ? (top - wrapper.offsetTop) / wrapper.offsetHeight : 0;
+  return { page: index + 1, offset: Math.max(-0.5, Math.min(1, offset)) };
+}
+
+/** Put the viewport back at a position reported by readingPosition(). */
+function scrollToPosition(page, offset) {
+  const wrapper = wrapperFor(Math.min(state.total, Math.max(1, Math.round(page))));
+  if (!wrapper) return false;
+  const fraction = Number.isFinite(offset) ? Math.max(-0.5, Math.min(1, offset)) : 0;
+  refs.container().scrollTo({
+    top: Math.max(0, wrapper.offsetTop + fraction * wrapper.offsetHeight),
+    behavior: 'auto',
+  });
+  updateCurrentPage();
+  return true;
+}
+
 function recordHistoryEntry() {
   if (!state.doc) return;
-  const container = refs.container();
-  const entry = { page: state.current, scrollTop: Math.round(container.scrollTop) };
+  const entry = readingPosition();
   const last = state.historyBack[state.historyBack.length - 1];
-  if (last && last.page === entry.page && Math.abs(last.scrollTop - entry.scrollTop) < 24) return;
+  if (last && last.page === entry.page && Math.abs(last.offset - entry.offset) < 0.03) return;
   state.historyBack.push(entry);
   if (state.historyBack.length > MAX_HISTORY) state.historyBack.shift();
   state.historyForward = [];
@@ -685,28 +851,33 @@ export function goToPage(n, { instant = false, recordHistory = false } = {}) {
   const container = refs.container();
   container.scrollTo({
     top: wrapper.offsetTop - 8,
-    behavior: instant ? 'auto' : 'smooth',
+    behavior: instant || prefersReducedMotion() ? 'auto' : 'smooth',
   });
+  if (instant) updateCurrentPage();
 }
 
 export function goBack() {
   if (!state.doc || state.historyBack.length === 0) return false;
-  const container = refs.container();
-  state.historyForward.push({ page: state.current, scrollTop: Math.round(container.scrollTop) });
+  state.historyForward.push(readingPosition());
   const target = state.historyBack.pop();
-  container.scrollTo({ top: target.scrollTop, behavior: 'auto' });
+  scrollToPosition(target.page, target.offset);
   emit('historychanged', { canBack: canGoBack(), canForward: canGoForward() });
   return true;
 }
 
 export function goForward() {
   if (!state.doc || state.historyForward.length === 0) return false;
-  const container = refs.container();
-  state.historyBack.push({ page: state.current, scrollTop: Math.round(container.scrollTop) });
+  state.historyBack.push(readingPosition());
   const target = state.historyForward.pop();
-  container.scrollTo({ top: target.scrollTop, behavior: 'auto' });
+  scrollToPosition(target.page, target.offset);
   emit('historychanged', { canBack: canGoBack(), canForward: canGoForward() });
   return true;
+}
+
+/** Page number under a point of the window, or null outside any page. */
+export function pageAtClientPoint(x, y) {
+  const el = document.elementFromPoint(x, y)?.closest?.('.pdf-page-wrapper');
+  return el ? Number(el.dataset.pageNumber) : null;
 }
 
 export async function ensureRendered(n) {
@@ -732,11 +903,10 @@ export function closeDocument() {
   rerenderVisibleDebounced.cancel();
   for (const task of state.renderTasks.values()) task.cancel();
   state.renderTasks.clear();
-  state.pageObserver?.disconnect();
   state.lazyObserver?.disconnect();
-  state.pageObserver = null;
   state.lazyObserver = null;
-  state.visiblePages.clear();
+  if (state.scrollFrame) cancelAnimationFrame(state.scrollFrame);
+  state.scrollFrame = 0;
   state.textCache.clear();
   state.rawPageDims.clear();
   state.pageDims.clear();
@@ -887,13 +1057,21 @@ export async function openDocument(data, opts) {
   }
   setupObservers();
 
-  if (restore && restore.scrollFraction > 0) {
+  if (restore && restore.topPage >= 1 && restore.topPage <= state.total) {
+    scrollToPosition(restore.topPage, restore.topOffset);
+  } else if (restore && restore.scrollFraction > 0) {
+    // State saved by a release that only knew the overall scroll fraction.
     restoreScrollFraction(restore.scrollFraction);
   } else if (restore && restore.page > 1) {
     goToPage(restore.page, { instant: true });
   } else {
     refs.container().scrollTop = 0;
   }
+  // Settle the page number before anyone is told the document is open, so
+  // the toolbar never flashes "1" on a book reopened at page 240.
+  const index = firstPageEndingAfter(refs.container().scrollTop);
+  state.current = Math.min(state.total, Math.max(1, index + 1));
+  updateCurrentPage();
 
   emit('documentopened', { name: opts.name, path: opts.path, total: state.total });
   emit('pagechanged', state.current);
@@ -970,6 +1148,50 @@ export async function resolveDestination(dest) {
     return Number.isInteger(pageIndex) ? pageIndex + 1 : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Render one page to a standalone image for printing.
+ *
+ * Independent of what is on screen: the page is painted at `dpi` regardless
+ * of the current zoom, honours the reader's rotation, and never the paper
+ * tint (that is a CSS filter on the on-screen canvas only).
+ * @returns {Promise<{url:string, widthPt:number, heightPt:number}|null>}
+ *          an object URL the caller must revoke, or null on failure.
+ */
+export async function renderPageImage(n, { dpi = 150, maxPixels = 12e6 } = {}) {
+  if (!state.doc) return null;
+  const gen = state.generation;
+  let canvas = null;
+  try {
+    const page = await state.doc.getPage(n);
+    if (gen !== state.generation) return null;
+    const rotation = ((page.rotate || 0) + state.rotation) % 360;
+    const base = page.getViewport({ scale: 1, rotation });
+    let scale = dpi / 72;
+    const pixels = base.width * base.height * scale * scale;
+    if (pixels > maxPixels) scale *= Math.sqrt(maxPixels / pixels);
+    const viewport = page.getViewport({ scale, rotation });
+
+    canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(viewport.width));
+    canvas.height = Math.max(1, Math.round(viewport.height));
+    const ctx = canvas.getContext('2d', { alpha: false });
+    await page.render({ canvas: null, canvasContext: ctx, viewport, intent: 'print' }).promise;
+    if (gen !== state.generation) return null;
+
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+    return blob
+      ? { url: URL.createObjectURL(blob), widthPt: base.width, heightPt: base.height }
+      : null;
+  } catch (error) {
+    console.warn(`gloss: page ${n} could not be rendered for printing:`, error?.message || error);
+    return null;
+  } finally {
+    // Release the bitmap now rather than whenever the collector gets to it:
+    // a long book renders hundreds of these in a row.
+    if (canvas) canvas.width = canvas.height = 0;
   }
 }
 

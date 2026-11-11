@@ -216,9 +216,12 @@ test('book-scoped glossaries switch automatically with the open PDF', async () =
 
     // Only the source for the current book appears in the reading toolbar;
     // other books stay loaded silently for automatic switching later.
-    await expect(page.locator('#source-chips .chip[data-chip-path]')).toHaveCount(1);
-    await expect(page.locator('#source-chips')).toContainText('Latin book');
-    await expect(page.locator('#source-chips')).not.toContainText('Devanagari book');
+    await page.click('#btn-sources');
+    await expect(page.locator('#sources-menu')).toBeVisible();
+    await expect(page.locator('#sources-menu [data-source-path]')).toHaveCount(1);
+    await expect(page.locator('#sources-menu')).toContainText('This book');
+    await expect(page.locator('#sources-menu')).toContainText('Latin book');
+    await expect(page.locator('#sources-menu')).not.toContainText('Devanagari book');
   } finally {
     await app.close();
   }

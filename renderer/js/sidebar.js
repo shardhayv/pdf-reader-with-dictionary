@@ -6,11 +6,14 @@
  * megabytes, not gigabytes. URLs are revoked on document close.
  */
 
-import { refs, esc, show, hide } from './dom.js';
+import { refs, $, esc, show, hide } from './dom.js';
 import { icons } from './icons.js';
 import * as viewer from './viewer.js';
 
 const THUMB_WIDTH = 108;
+
+/** Below this width the sidebar floats over the page (see style.css). */
+const floatingQuery = window.matchMedia('(max-width: 760px)');
 
 const state = {
   visible: false,
@@ -38,6 +41,8 @@ export function init({
 } = {}) {
   els = {
     root: refs.sidebar(),
+    scrim: $('sidebar-scrim'),
+    toggle: $('btn-sidebar'),
     tabThumbs: document.getElementById('sidebar-tab-thumbnails'),
     tabOutline: document.getElementById('sidebar-tab-outline'),
     tabBookmarks: document.getElementById('sidebar-tab-bookmarks'),
@@ -56,9 +61,26 @@ export function init({
   els.tabOutline.addEventListener('click', () => setTab('outline', { notify: true }));
   els.tabBookmarks?.addEventListener('click', () => setTab('bookmarks', { notify: true }));
 
+  // Floating over the page, a press on the dimmed page puts the sidebar away.
+  els.scrim?.addEventListener('click', () => setVisible(false));
+
+  // Left/Right move between the three tabs, as a tab list should.
+  const tabs = [els.tabThumbs, els.tabOutline, els.tabBookmarks].filter(Boolean);
+  const tabNames = ['thumbnails', 'outline', 'bookmarks'];
+  for (const [index, tab] of tabs.entries()) {
+    tab.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      e.preventDefault();
+      e.stopPropagation(); // not a page turn
+      const next = (index + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+      setTab(tabNames[next], { notify: true });
+      tabs[next].focus();
+    });
+  }
+
   els.thumbs.addEventListener('click', (e) => {
     const item = e.target.closest('[data-thumb-page]');
-    if (item) viewer.goToPage(Number(item.dataset.thumbPage), { recordHistory: true });
+    if (item) viewer.goToPage(Number(item.dataset.thumbPage), { instant: true, recordHistory: true });
   });
 
   els.outline.addEventListener('click', async (e) => {
@@ -75,7 +97,7 @@ export function init({
     if (dest === undefined) return;
     try {
       const page = await viewer.resolveDestination(dest);
-      if (page) viewer.goToPage(page, { recordHistory: true });
+      if (page) viewer.goToPage(page, { instant: true, recordHistory: true });
     } catch (error) {
       // A malformed outline must never take the reader down with it. pdf.js
       // normally returns null for bad destinations; this boundary also covers
@@ -108,9 +130,16 @@ export function init({
 export function isVisible() { return state.visible; }
 export function currentTab() { return state.tab; }
 
+/** True while the sidebar is open *and* floating over the page. */
+export function isFloating() {
+  return state.visible && floatingQuery.matches;
+}
+
 export function setVisible(visible) {
   state.visible = !!visible;
   if (state.visible) show(els.root); else hide(els.root);
+  if (els.scrim) els.scrim.hidden = !state.visible;
+  els.toggle?.setAttribute('aria-pressed', String(state.visible));
   viewer.handleResize(); // fit modes depend on container width
   // Page changes are ignored while hidden, so re-sync on open — otherwise
   // the sidebar shows no current page until you next navigate.
@@ -131,6 +160,10 @@ export function setTab(tab, { notify = false } = {}) {
   els.tabThumbs.setAttribute('aria-selected', String(isThumbs));
   els.tabOutline.setAttribute('aria-selected', String(isOutline));
   els.tabBookmarks?.setAttribute('aria-selected', String(isBookmarks));
+  // Roving tabindex: one stop for the tab list, arrows within it.
+  els.tabThumbs.tabIndex = isThumbs ? 0 : -1;
+  els.tabOutline.tabIndex = isOutline ? 0 : -1;
+  if (els.tabBookmarks) els.tabBookmarks.tabIndex = isBookmarks ? 0 : -1;
   if (isThumbs) show(els.thumbs); else hide(els.thumbs);
   if (isOutline) show(els.outline); else hide(els.outline);
   if (els.bookmarks) {
@@ -321,7 +354,7 @@ function renderBookmarksPanel() {
   });
   for (const btn of els.bookmarks.querySelectorAll('[data-bookmark-page]')) {
     btn.addEventListener('click', () => {
-      viewer.goToPage(Number(btn.dataset.bookmarkPage), { recordHistory: true });
+      viewer.goToPage(Number(btn.dataset.bookmarkPage), { instant: true, recordHistory: true });
     });
   }
   for (const btn of els.bookmarks.querySelectorAll('[data-remove-bookmark]')) {

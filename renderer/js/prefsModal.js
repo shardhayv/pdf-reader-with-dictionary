@@ -4,7 +4,7 @@
  * handled by the app-level layer stack.
  */
 
-import { $, esc, show, hide, isShown } from './dom.js';
+import { $, esc, isShown, openModal, closeModal } from './dom.js';
 import { icons } from './icons.js';
 
 const WIKI_LANG_LABELS = [
@@ -17,7 +17,7 @@ const WIKI_LANG_LABELS = [
 let hooks = null; // { getPrefs, applyPrefs, onDictsChanged, sessionStats, clearLookupCache }
 let els = null;
 let activeSection = 'dictionaries';
-let lastFocused = null;
+const SECTIONS = new Set(['dictionaries', 'lookup', 'appearance', 'session']);
 
 export function init(hookset) {
   hooks = hookset;
@@ -40,36 +40,22 @@ export function init(hookset) {
     renderNav();
     renderSection();
   });
-  els.modal.addEventListener('keydown', trapFocus);
 }
 
 export function isOpen() { return isShown(els.overlay); }
 
-export function open() {
-  lastFocused = document.activeElement;
+/** Open Preferences, optionally straight at one section. */
+export function open(section = null) {
+  if (section && SECTIONS.has(section)) activeSection = section;
   renderNav();
   renderSection();
-  show(els.overlay);
-  els.modal.querySelector('.modal-nav-btn--active')?.focus();
+  // openModal remembers what had focus, blocks the page behind, traps Tab.
+  openModal(els.overlay, { focus: els.modal.querySelector('.modal-nav-btn--active') });
 }
 
 export function close() {
   if (!isOpen()) return;
-  hide(els.overlay);
-  if (lastFocused && typeof lastFocused.focus === 'function') lastFocused.focus();
-  lastFocused = null;
-}
-
-function trapFocus(e) {
-  if (e.key !== 'Tab') return;
-  const focusables = [...els.modal.querySelectorAll(
-    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-  )].filter(n => !n.disabled && n.offsetParent !== null);
-  if (focusables.length === 0) return;
-  const first = focusables[0];
-  const last = focusables[focusables.length - 1];
-  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  closeModal(els.overlay);
 }
 
 function renderNav() {

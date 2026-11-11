@@ -82,7 +82,17 @@ GLOSS_TEST_SANDBOX=1 npm run test:e2e
 ```
 
 Each spec launches with its own temporary `--user-data-dir`, so tests never read
-or write your real preferences and recent documents.
+or write your real preferences and recent documents. The harness also sets
+`GLOSS_NO_BUNDLED_DICTIONARIES=1`: a checkout that has the twelve packaged
+dictionaries in `bundled-dictionaries/` would otherwise seed them into every
+run and break specs that assert exact dictionary lists and lookup results.
+
+The suite opens real windows. On Linux, keep them off your desktop with a
+virtual display:
+
+```bash
+xvfb-run -a -s "-screen 0 2560x1600x24" npm run test:e2e
+```
 
 ---
 
@@ -96,7 +106,9 @@ including offset round-tripping and words split across text items; text-quality
 classification.
 
 **`test/unit/paths.test.js`** — argv parsing (flags rejected, relative paths
-resolved against the caller's cwd, nonexistent and non-file paths dropped);
+resolved against the caller's cwd, nonexistent and non-file paths dropped,
+Windows drive and UNC paths accepted as paths rather than rejected as
+one-letter URL schemes);
 `readPdfSafely` realpath canonicalization, magic-byte sniffing, size and
 emptiness handling, and distinct error codes.
 
@@ -117,7 +129,13 @@ lookup retires its stuck worker instead of poisoning later lookups.
 
 **`test/unit/store.test.js`** — corrupt preference/history files are preserved
 as timestamped backups, safe defaults load, and the primary files can be
-repaired without touching those recovery copies.
+repaired without touching those recovery copies; the saved reading position
+and the packaged-dictionary record are validated and not renderer-writable.
+
+**`test/unit/dicts.test.js`** — candidate ordering and priority across MDX and
+JSON sources, book scoping, transactional reload, and the packaged-dictionary
+rules: offered once, a removed one stays removed, a moved package is followed
+with its on/off state, and a reader's own copy is never duplicated.
 
 **`test/e2e/security.spec.js`** — 25 hostile dictionary payloads through the
 real sanitizer; link rewriting to inert `data-*` attributes; the exact
@@ -139,6 +157,17 @@ scanned and broken-mapping notices; and per-document state restoration.
 Devanagari popup rendering, automatic PDF-specific activation, global priority,
 transactional live reload, draft behavior, and sanitizer parity with MDX.
 
+**`test/e2e/responsive.spec.js`** — drives the real window through eight
+widths from 1600 px to the 420 px minimum with a twelve-dictionary shelf and
+asserts no toolbar control is clipped, overlapping, wrapped or off-screen, and
+that folded tools work from the More menu; the Sources checklist; clipboard
+copy against Electron's real clipboard and the exact text a saved word keeps;
+Space/arrow keys acting on the focused control and nothing reaching the
+document through an open dialog; a zoomed page being fully scrollable; zoom
+and resize holding the reader's place 200 pages in; the reading position
+surviving a reopen at a different window size; and printing producing one
+sheet per page at the document's page size (verified through `printToPDF`).
+
 **`test/e2e/integration.spec.js`** — dialog/drop/recents paths, keyboard and
 reduced-motion states, password UI, plus recovery from a failed file portal, a
 corrupt saved glossary, an unexpected renderer promise rejection, a failed MDX
@@ -159,7 +188,8 @@ Worth checking by eye after any CSS change:
   chandrabindu need the generous line height).
 - The popup sits near the selection without covering the line being read.
 - Focus rings are visible on every control, in both themes.
-- The toolbar stays on one row down to about 680 px wide.
+- The toolbar stays on one row at every width down to 420 px, folding tools
+  into the More menu (this one is also asserted by `responsive.spec.js`).
 - With `prefers-reduced-motion`, nothing animates and programmatic scrolling
   jumps rather than smooth-scrolls.
 

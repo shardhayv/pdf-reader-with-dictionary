@@ -135,6 +135,10 @@ async function loadMany(filePaths, { enabledFlags = {}, persistAfter = true } = 
         error: '',
       });
       results.push({ path: realPath, name, kind, success: true });
+      // A large JSON glossary parses synchronously. Hand the event loop back
+      // between files so opening a PDF or scrolling is never queued behind a
+      // whole shelf of dictionaries loading at startup.
+      await new Promise(resolve => setImmediate(resolve));
     } catch (err) {
       results.push({
         path: realPath, name: displayName(realPath), success: false,
@@ -146,54 +150,95 @@ async function loadMany(filePaths, { enabledFlags = {}, persistAfter = true } = 
   return results;
 }
 
-/** Find pre-bundled offline dictionaries shipped with the app package. */
-function getBundledDictionaryPaths() {
+/**
+ * Folders that may hold the offline dictionaries shipped inside a release
+ * package: `resources/dictionaries` in an installed build, and the checkout's
+ * `bundled-dictionaries/` when running from source.
+ */
+function defaultBundledDirs() {
+  // Test runs and anyone who wants a bare reader can opt out entirely.
+  if (process.env.GLOSS_NO_BUNDLED_DICTIONARIES === '1') return [];
   const dirs = [];
-  if (process.resourcesPath) {
-    dirs.push(path.join(process.resourcesPath, 'dictionaries'));
-  }
+  if (process.resourcesPath) dirs.push(path.join(process.resourcesPath, 'dictionaries'));
   if (typeof app?.getAppPath === 'function') {
     dirs.push(path.join(app.getAppPath(), 'bundled-dictionaries'));
   }
+  return dirs;
+}
+
+/** The packaged dictionaries, from the first folder that actually has some. */
+function getBundledDictionaryPaths(dirs = defaultBundledDirs()) {
   for (const dir of dirs) {
     try {
-      if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
-        const files = fs.readdirSync(dir)
-          .filter(f => f.endsWith('.json'))
-          .sort()
-          .map(f => path.join(dir, f));
-        if (files.length > 0) return files;
-      }
-    } catch { /* ignore */ }
+      if (!fs.statSync(dir).isDirectory()) continue;
+      const files = fs.readdirSync(dir)
+        .filter(f => /\.json$/i.test(f))
+        .sort()
+        .map(f => path.join(dir, f));
+      if (files.length > 0) return files;
+    } catch { /* folder absent in this build — try the next one */ }
   }
   return [];
 }
 
-/** Restore saved dictionaries (called after the window is shown). */
-async function restoreFromPrefs() {
-  const { order, enabled } = store.getPrefs().dictionaries;
-  const bundled = getBundledDictionaryPaths();
-  const bundledByBase = new Map(bundled.map(p => [path.basename(p), p]));
+/**
+ * Restore saved dictionaries (called after the window is shown).
+ *
+ * Packaged dictionaries need two things a plain "reload what was saved"
+ * cannot give them:
+ *
+ *  - Their folder moves. A portable build unpacks to a fresh temporary
+ *    directory on every launch, and an upgrade can relocate `resources/`.
+ *    A saved path that no longer exists is therefore followed by file name
+ *    into the current package, carrying its on/off choice with it.
+ *
+ *  - They are offered once, not forever. Each packaged file is added the
+ *    first time a build containing it runs and recorded in `bundledSeen`.
+ *    Removing a dictionary — or all of them — is then respected on the next
+ *    launch instead of being silently undone, while a dictionary new to a
+ *    later release still arrives.
+ */
+async function restoreFromPrefs({ bundledDirs } = {}) {
+  const saved = store.getPrefs().dictionaries;
+  const bundled = getBundledDictionaryPaths(bundledDirs);
+  const bundledByName = new Map(bundled.map(p => [path.basename(p), p]));
+  const seen = new Set(saved.bundledSeen || []);
 
-  const resolved = [];
-  for (const p of order) {
-    if (fs.existsSync(p)) {
-      resolved.push(p);
-    } else {
-      const base = path.basename(p);
-      if (bundledByBase.has(base)) {
-        resolved.push(bundledByBase.get(base));
-      }
-    }
+  const targets = [];
+  const enabledFlags = {};
+  const represented = new Set(); // file names already in the reader's list
+
+  for (const savedPath of saved.order) {
+    const name = path.basename(savedPath);
+    const target = !fs.existsSync(savedPath) && bundledByName.has(name)
+      ? bundledByName.get(name)
+      : savedPath;
+    if (targets.includes(target)) continue;
+    targets.push(target);
+    enabledFlags[target] = saved.enabled?.[savedPath] !== false;
+    represented.add(name);
   }
 
-  // If first launch or no dictionaries configured, auto-seed bundled dictionaries
-  if (resolved.length === 0 && bundled.length > 0) {
-    for (const b of bundled) resolved.push(b);
+  const newlySeen = [];
+  for (const packaged of bundled) {
+    const name = path.basename(packaged);
+    if (seen.has(name)) continue;
+    newlySeen.push(name);
+    // A copy the reader already has under the same name (for example one
+    // built by `npm run dictionaries`) wins; never list the same book twice.
+    if (represented.has(name)) continue;
+    targets.push(packaged);
+    enabledFlags[packaged] = true;
+    represented.add(name);
+  }
+  if (newlySeen.length > 0) {
+    store.setPrefsInternal(prefs => {
+      prefs.dictionaries.bundledSeen = [...seen, ...newlySeen];
+    });
   }
 
-  if (resolved.length === 0) return [];
-  return await loadMany(resolved, { enabledFlags: enabled, persistAfter: true });
+  if (targets.length === 0) return [];
+  return loadMany(targets, { enabledFlags, persistAfter: true });
 }
 
 function list(document = null) {
@@ -333,5 +378,6 @@ function closeAll() {
 }
 
 module.exports = {
-  loadMany, restoreFromPrefs, list, reload, remove, toggle, reorder, lookup, hasDictionary, closeAll,
+  loadMany, restoreFromPrefs, getBundledDictionaryPaths,
+  list, reload, remove, toggle, reorder, lookup, hasDictionary, closeAll,
 };

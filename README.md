@@ -21,7 +21,8 @@ Created and maintained by **[Shardhay Vatshyayan](https://github.com/shardhayv)*
 
 Gloss is a desktop PDF reader built around one idea: when you don't know a word,
 looking it up should take one gesture, not ten. Select any word and a definition
-appears next to it — from **your own MDX dictionaries**, with **Wiktionary** and
+appears next to it — from **twelve offline dictionaries that ship with the
+release builds**, **your own MDX dictionaries**, and **Wiktionary** and
 **Wikipedia** as optional online fallbacks. For each book, Gloss can also use a
 small **AI-assisted JSON glossary** containing the names, coined words, and
 context-specific meanings that no general dictionary knows.
@@ -54,7 +55,9 @@ are no accounts, no telemetry, and no analytics.
 |---|---|
 | **Instant lookup** | Select a word or short phrase; the definition appears without covering the line you're reading |
 | **Latin and Devanagari** | Unicode-aware selection, search, and lookup that never split a conjunct or drop a matra |
+| **Offline from first launch** | Release builds include 12 dictionaries (about 361,000 entries): nine subject areas, general English, Hindi & Sanskrit, and Nepali |
 | **Your dictionaries** | Load any number of `.mdx` files without freezing the reader, set their priority, toggle them per lookup |
+| **Sources at a glance** | One toolbar button shows how many sources are on and opens a checklist to switch any of them — it scales to any number of dictionaries |
 | **Per-book glossaries** | Build an AI-assisted JSON glossary for one PDF; it activates automatically only for that book |
 | **Wiktionary meanings** | Optional online dictionary: senses, part of speech, examples, with in-popup cross-references |
 | **Wikipedia fallback** | Optional, in English, Hindi, Nepali, or Maithili |
@@ -69,8 +72,9 @@ are no accounts, no telemetry, and no analytics.
 | **Pages, outline & saved** | Lazy thumbnail sidebar, the document's table of contents, and your bookmarked pages + saved vocabulary |
 | **Zoom & rotation** | Fit width, fit page, free zoom with `Ctrl`+wheel anchored under the cursor, and per-book 90° rotation (`R`) |
 | **Page paper tint** | Read on Original, Warm paper, Sepia, or inverted Night page (`Ctrl+Shift+D`) to reduce eye strain |
-| **Document info & print** | Inspect PDF metadata, page dimensions, and file size (`Ctrl+I`), or print (`Ctrl+P`) |
-| **Picks up where you left off** | Page, zoom, rotation, spread layout, bookmarks, and scroll position are remembered per document |
+| **Document info & print** | Inspect PDF metadata, page dimensions, and file size (`Ctrl+I`); print the whole document at 150 dpi, one page per sheet, with a cancellable progress dialog (`Ctrl+P`) |
+| **Fits any window** | The toolbar measures itself and folds tools into a **More** menu as the window narrows — nothing is ever clipped, from ultrawide down to 420 × 360 |
+| **Picks up where you left off** | Page, zoom, rotation, spread layout, bookmarks, and the exact line you were on are remembered per document — even if the window is a different size next time |
 | **Reads like a native app** | Drag-and-drop, file associations, recent documents, reading progress bar, remembered window position |
 | **Light, dark, or system** | Plus reduced-motion support and full keyboard access |
 
@@ -78,11 +82,13 @@ are no accounts, no telemetry, and no analytics.
 
 ## Requirements
 
-- Linux x86_64 (developed and verified on Ubuntu 26.04, GNOME/Wayland)
+- **Linux x86_64** (developed and verified on Ubuntu 26.04, GNOME/Wayland) or
+  **Windows 10/11 x64**
 - Node.js 20.19 or newer to build from source (Node 24 recommended) — PDF.js
   and Playwright require Node 20, ESLint 10 requires 20.19
 
-Devanagari rendering uses your system fonts. On Debian/Ubuntu:
+Devanagari rendering uses your system fonts: Nirmala UI on Windows is used
+automatically; on Debian/Ubuntu install Noto:
 
 ```bash
 sudo apt install fonts-noto-core
@@ -119,18 +125,24 @@ this up correctly at install time and need no such step.
 
 ## Packaging & Downloads
 
-Prebuilt releases for Linux and Windows are available directly on the [GitHub Releases](https://github.com/shardhayv/pdf-reader-with-dictionary/releases) page:
+Prebuilt releases for Linux and Windows are on the [GitHub Releases](https://github.com/shardhayv/pdf-reader-with-dictionary/releases) page:
 
-- **Windows**:
-  - `Gloss-2.4.0-Setup.exe` — Full Windows installer with start menu & desktop shortcuts and PDF file association.
-  - `Gloss-2.4.0-Portable.exe` — Standalone portable executable (runs from anywhere, e.g. USB drive, no installation required).
-  - *Both Windows builds come **pre-bundled with all 12 offline dictionaries** (`361,000+` entries) ready to use on first launch.*
-- **Linux**:
-  - `gloss_2.4.0_amd64.deb` — Debian/Ubuntu package with desktop integration and sandboxing.
+| File | Platform | What it is |
+|---|---|---|
+| `gloss_2.5.0_amd64.deb` | Debian / Ubuntu x86_64 | Native package: desktop entry, PDF file association, working sandbox |
+| `Gloss-2.5.0-Setup.exe` | Windows x64 | Installer with Start Menu and desktop shortcuts and PDF file association |
+| `Gloss-2.5.0-Portable.exe` | Windows x64 | Single file, no installation — runs from a USB stick |
 
-> [!NOTE]
-> **Why is the package size ~117–146 MB?**
-> The core reader executable itself is lightweight (~60 MB). The release packages include **63+ MB of offline dictionary databases (361,000+ entries)** across 10 academic and domain categories plus Devanagari Hindi/Sanskrit and Nepali lexicons pre-bundled into `resources/dictionaries`. This ensures Gloss is 100% plug-and-play offline from the very first launch, with zero setup or additional downloads required.
+All three include the 12 offline dictionaries, so lookups work the moment the
+app opens. That data is why the downloads are 120–150 MB: the reader itself is
+about 60 MB, the dictionaries add roughly 64 MB. Their sources and licences
+are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and shipped
+beside them as `resources/dictionaries/NOTICES.txt`.
+
+Any bundled dictionary can be switched off from the toolbar's **Sources**
+menu or removed in **Preferences → Dictionaries**; a removed dictionary stays
+removed across restarts and upgrades. The Windows builds are not code-signed,
+so SmartScreen will ask for confirmation the first time you run them.
 
 ### Build from source
 
@@ -139,6 +151,10 @@ Prebuilt releases for Linux and Windows are available directly on the [GitHub Re
 npm run dist:deb        # Debian/Ubuntu package (.deb)
 npm run dist:appimage   # AppImage only
 npm run dist            # AppImage + .deb
+
+# The offline dictionaries are packaged from bundled-dictionaries/ (not in
+# Git). Build them once with `npm run dictionaries` and copy the JSON files
+# there; without that folder the packages are simply built without them.
 
 # Windows (builds on Linux via Wine/makensis or natively on Windows)
 npm run dist:win        # Both NSIS installer and Portable .exe
@@ -149,7 +165,7 @@ npm run dist:win:portable # Portable single-file executable (.exe)
 Install and run the `.deb` on Ubuntu/Debian:
 
 ```bash
-sudo apt install ./dist/gloss_2.4.0_amd64.deb
+sudo apt install ./dist/gloss_2.5.0_amd64.deb
 gloss                      # or launch from your applications menu
 gloss ~/Documents/paper.pdf
 ```
@@ -171,17 +187,19 @@ for Ubuntu and Debian.
 
 1. **Open a PDF** — the toolbar button, `Ctrl+O`, drag a file onto the window,
    pass a path on the command line, or open it from your file manager.
-2. **Add dictionaries** — Preferences → Dictionaries → *Add dictionaries…* and
-   pick one or more lawfully obtained `.mdx` files or global `.json` glossaries.
-   Open, public-domain, and personally licensed dictionaries can all be used;
-   Gloss does not bundle or redistribute dictionary data in its packages.
+2. **Choose your sources** — the **Sources** button in the toolbar shows how
+   many lookup sources are on; click it to switch any dictionary, Wiktionary
+   or Wikipedia on or off. Release builds start with the 12 bundled
+   dictionaries already there.
 
-   To download and auto-register a complete suite of **12 offline category-wise
-   and Devanagari dictionaries** (`361,000+` entries across Computer Science &
-   AI, Philosophy & Logic, Economics & Finance, Politics & Law, History &
-   Civilizations, Biology & Medicine, Chemistry & Materials, Mathematics &
-   Physics, Psychology & Linguistics, General English WordNet 3.1, Devanagari
-   Hindi & Sanskrit Dictionary, and Nepali Brihat Shabdakosh):
+   To add your own, use Preferences → Dictionaries → *Add dictionaries…* and
+   pick one or more lawfully obtained `.mdx` files or global `.json`
+   glossaries. Open, public-domain, and personally licensed dictionaries can
+   all be used.
+
+   Running from source, the bundled set is not in the repository. Build and
+   register it (about 361,000 entries: nine subject areas, general English,
+   Hindi & Sanskrit, and Nepali) with:
 
    ```bash
    npm run dictionaries
@@ -231,8 +249,9 @@ for Ubuntu and Debian.
 | `F9` | Pages, outline, and saved sidebar |
 | `F11` | Read mode |
 | `Ctrl+,` | Preferences |
-| `PageUp` / `PageDown` / `Home` / `End` | Scroll |
-| `←` / `→` | Previous / next page |
+| `Space` / `Shift+Space` | Scroll a screen down / up |
+| `↑` / `↓` / `PageUp` / `PageDown` / `Home` / `End` | Scroll |
+| `←` / `→` | Previous / next page (a whole spread in two-page view) |
 | `Escape` | Close the topmost thing only |
 | `F1` | About |
 
@@ -272,7 +291,11 @@ Gloss follows Electron's two-process model with the renderer fully sandboxed.
 │  lookup.js    lookup orchestration and race prevention       │
 │  popup.js     sanitization and the definition surface        │
 │  search.js    find-in-document                               │
-│  sidebar.js   thumbnails and outline                         │
+│  sidebar.js   thumbnails, outline, bookmarks, vocabulary     │
+│  toolbar.js   measures the toolbar, folds tools into "More"  │
+│  sources.js   the Sources checklist                          │
+│  menu.js      anchored popover menus                         │
+│  print.js     renders every page for the print dialog        │
 │  prefsModal.js, dom.js, icons.js                             │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -291,10 +314,13 @@ the virtualized renderer, the lookup candidate ladder, and the security model;
 
 ```bash
 npm run fixtures     # generate test PDFs (once; they are not committed)
-npm run test:unit    # Unicode, builder safety, MDX workers, paths
-npm run test:e2e     # Electron integration + security regressions
+npm run test:unit    # Unicode, builder safety, MDX workers, paths, state
+npm run test:e2e     # Electron integration, layout, and security regressions
 npm test             # both
 ```
+
+The end-to-end suite opens real windows. To keep them off your desktop on
+Linux, run it under a virtual display: `xvfb-run -a npm run test:e2e`.
 
 `npm run test:e2e` passes `--no-sandbox` **to the test harness only**, because
 the development Electron binary cannot sandbox itself (see above). If you have
@@ -325,11 +351,12 @@ pdf-reader-with-dictionary/
 │   └── js/                  # renderer modules
 ├── about.html/.css/.js      # about window
 ├── assets/icon.png
-├── build/                   # packaging scripts (deb maintainer scripts)
+├── build/                   # packaging: deb scripts, icon, dictionary notices
 ├── scripts/                 # glossary builder, fixtures, visual/perf tools
 ├── test/unit/               # node:test suites
 ├── test/e2e/                # Playwright + Electron suites
-└── docs/                    # architecture and testing notes
+├── docs/                    # architecture, glossary and testing notes
+└── CHANGELOG.md             # what changed in each release
 ```
 
 ---
@@ -342,7 +369,7 @@ pdf-reader-with-dictionary/
 | [PDF.js](https://mozilla.github.io/pdf.js/) | 6.5 | PDF parsing, rendering, text layer |
 | [js-mdict](https://github.com/terasum/js-mdict) | 7 | MDX dictionary parsing |
 | [DOMPurify](https://github.com/cure53/DOMPurify) | 3.4 | Sanitizing untrusted dictionary HTML |
-| [electron-builder](https://www.electron.build/) | 26 | AppImage and Debian packaging |
+| [electron-builder](https://www.electron.build/) | 26 | Debian, AppImage and Windows (NSIS, portable) packaging |
 | [Playwright](https://playwright.dev/) | 1.65 | Electron integration tests |
 
 No frontend framework and no bundler — plain ES modules in the renderer.
@@ -362,8 +389,13 @@ No frontend framework and no bundler — plain ES modules in the renderer.
   space inside a word or splits one across runs. Search handles the splits;
   the glossary builder recovers conservative Devanagari/hyphenated splits, but
   a spurious inserted space can still affect an exact-phrase search.
+- **Printing rasterises.** Pages are sent to the printer as 150 dpi images, so
+  the printout is faithful but its text is not selectable if you "print to
+  PDF". Keep the original file for that.
 - **AppImage sandboxing on Ubuntu 24.04+** — see the packaging note above.
-- **Linux x86_64 and Windows x64** supported in this release.
+- **Windows builds are unsigned** and cross-built on Linux. The automated
+  suite runs on Linux only; Windows-specific path handling is unit-tested.
+- **Linux x86_64 and Windows x64** are the supported platforms.
 
 ---
 
@@ -379,10 +411,15 @@ and warranty notice is in [NOTICE](NOTICE).
 Runtime and development dependencies retain their own licenses; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-Gloss bundles no dictionary data. Dictionaries and glossaries you load are
-yours, and their contents are treated as untrusted input regardless of origin:
-definitions are sanitized before display and can never navigate the app or
-reach the network — including glossaries you wrote yourself.
+The AGPL covers the program. The offline dictionaries shipped in release
+packages are separate data under their own terms — CC BY-SA 4.0 (Wikipedia),
+the WordNet licence, and MIT, with one source that publishes no licence; the
+details are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The source
+repository itself contains no dictionary data.
+
+Every dictionary, bundled or yours, is treated as untrusted input: definitions
+are sanitized before display and can never navigate the app or reach the
+network — including glossaries you wrote yourself.
 
 <div align="center">
 

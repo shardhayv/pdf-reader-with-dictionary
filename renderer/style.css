@@ -30,14 +30,19 @@
   --shadow-lg:     0 20px 48px -12px rgba(31, 29, 26, 0.28);
   --page-shadow:   0 1px 3px rgba(31, 29, 26, 0.14), 0 8px 24px -10px rgba(31, 29, 26, 0.2);
 
-  --sans: 'Ubuntu Sans', 'Inter', system-ui, 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
-  --serif: 'Source Serif 4', 'Noto Serif', Georgia, 'Noto Serif Devanagari', serif;
+  /* Devanagari fallbacks are named for both platforms: Noto on Linux,
+     Nirmala UI / Mangal on Windows, where Noto is not installed. */
+  --sans: 'Ubuntu Sans', 'Inter', system-ui, 'Segoe UI', 'Noto Sans',
+          'Noto Sans Devanagari', 'Nirmala UI', 'Mangal', sans-serif;
+  --serif: 'Source Serif 4', 'Noto Serif', Georgia, 'Noto Serif Devanagari',
+           'Nirmala UI', 'Mangal', serif;
 
   --r-sm: 5px;
   --r-md: 7px;
   --r-lg: 11px;
   --toolbar-h: 46px;
-  --page-margin: 48px;   /* keep in sync with PAGE_HORIZONTAL_MARGIN in viewer.js */
+  --page-margin: 48px;   /* total horizontal gutter; viewer.js reads the computed padding */
+  --sidebar-w: clamp(184px, 19vw, 248px);
   --t-fast: 120ms;
   --t-base: 160ms;
   --ease: cubic-bezier(0.32, 0.72, 0.35, 1);
@@ -166,6 +171,22 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
 }
 .btn--primary:hover { background: var(--ink-soft); border-color: var(--ink-soft); }
 
+/* A bordered but unfilled button: present without competing with "Open". */
+.btn--quiet { background: none; color: var(--ink-soft); }
+.btn--quiet:hover { background: var(--rule); border-color: var(--rule-strong); color: var(--ink); }
+.btn--quiet[aria-expanded='true'] { background: var(--rule); color: var(--ink); }
+.btn--muted .btn-count { color: var(--ink-faint); background: var(--rule); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+
+.btn-count {
+  min-width: 18px; height: 18px; padding: 0 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 600; line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent); background: var(--accent-wash);
+  border-radius: 999px;
+}
+
 .btn--lg { height: 38px; padding: 0 20px; font-size: 14px; }
 .btn--xs { height: 22px; padding: 0 7px; font-size: 11px; gap: 4px; border-radius: var(--r-sm); }
 .btn--xs svg { width: 12px; height: 12px; }
@@ -180,6 +201,7 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
 }
 .icon-btn:hover:not(:disabled) { background: var(--rule); color: var(--ink); }
 .icon-btn[aria-pressed='true'] { color: var(--accent); background: var(--accent-wash); }
+.icon-btn[aria-expanded='true'] { background: var(--rule); color: var(--ink); }
 .icon-btn:disabled { opacity: 0.35; cursor: default; }
 .icon-btn--sm { width: 24px; height: 24px; padding: 5px; }
 .icon-btn--danger:hover:not(:disabled) { color: var(--danger); }
@@ -196,6 +218,10 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
 
 /* ─── Toolbar ─────────────────────────────────────────────────────────────── */
 
+/* One row, always. Nothing in the toolbar may shrink, wrap or be clipped:
+   renderer/js/toolbar.js measures it and folds whole controls into the
+   "More" menu instead, so what is on screen is always complete and usable.
+   overflow:hidden only covers the single frame before that measurement. */
 .toolbar {
   display: flex; align-items: center; gap: 8px;
   height: var(--toolbar-h); flex: none;
@@ -203,36 +229,109 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
   background: var(--surface);
   border-bottom: 1px solid var(--rule);
   user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
 }
-.toolbar-group { display: flex; align-items: center; gap: 4px; }
-.toolbar-group--center { flex: 1; justify-content: center; }
-.toolbar-group--end { margin-left: auto; gap: 8px; }
-.toolbar-group--center:not([hidden]) ~ .toolbar-group--end { margin-left: 0; }
+.toolbar-group { display: flex; align-items: center; gap: 4px; flex: none; }
+.toolbar-group > * { flex: none; }
+.toolbar-group--center { flex: 1 0 auto; justify-content: center; }
+.toolbar-group--end { margin-left: auto; gap: 6px; }
 .toolbar-divider { width: 1px; height: 18px; background: var(--rule); margin: 0 5px; }
 
+/* Folded into the More menu. Not [hidden]: that attribute already means
+   "this control does not apply right now" (history with nowhere to go). */
+.is-folded { display: none !important; }
+
 .page-field {
-  display: flex; align-items: baseline; gap: 5px;
+  display: flex; align-items: center; gap: 6px;
   font-size: 12.5px; color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
 }
-.page-field input { width: 46px; text-align: center; }
-
-.zoom-menu { width: 96px; cursor: pointer; }
-
-.source-chips { display: flex; align-items: center; gap: 5px; }
-.chip {
-  height: 22px; padding: 0 9px;
-  font-family: inherit; font-size: 11.5px; font-weight: 500; letter-spacing: 0.01em;
-  color: var(--ink-soft); background: none;
-  border: 1px solid var(--rule-strong); border-radius: 999px;
-  cursor: pointer; max-width: 130px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease),
-              background var(--t-fast) var(--ease);
+/* --digits is set from the page count, so "of 9" and "of 1204" both fit. */
+.page-field input {
+  width: calc(var(--digits, 3) * 1ch + 20px);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
-.chip[aria-pressed='true'] { color: var(--accent); border-color: var(--accent); background: var(--accent-wash); }
-.chip--off { opacity: 0.55; }
-.chip:hover { border-color: var(--ink-faint); }
-.chip-hint { font-size: 11.5px; color: var(--ink-faint); }
+
+.zoom-menu { width: 98px; padding: 0 6px; cursor: pointer; }
+
+/* Compact: the step before anything folds. Labels go, icons stay. */
+.toolbar--compact { gap: 6px; padding: 0 8px; }
+.toolbar--compact .toolbar-group { gap: 2px; }
+.toolbar--compact .toolbar-group--end { gap: 4px; }
+.toolbar--compact .toolbar-divider { margin: 0 3px; }
+.toolbar--compact .btn-label { display: none; }
+.toolbar--compact #btn-open { width: 32px; padding: 0; justify-content: center; }
+.toolbar--compact #btn-sources { padding: 0 7px; gap: 5px; }
+.toolbar--compact .zoom-menu { width: 88px; }
+
+/* ─── Menus ───────────────────────────────────────────────────────────────── */
+
+/* Popovers anchored under a toolbar button (renderer/js/menu.js positions
+   them and caps their height to the window). */
+.menu {
+  position: fixed; z-index: 75;
+  width: max-content; min-width: 208px; max-width: calc(100vw - 16px);
+  display: flex; flex-direction: column;
+  padding: 5px;
+  background: var(--raised);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule-strong) transparent;
+  user-select: none;
+  animation: menu-in var(--t-fast) var(--ease);
+}
+@keyframes menu-in { from { opacity: 0; transform: translateY(-3px); } }
+
+/* The sources list scrolls inside a fixed head and foot. */
+.menu--sources { width: min(340px, calc(100vw - 16px)); overflow: hidden; padding: 0; }
+.menu-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  flex: none; padding: 11px 13px 9px;
+  border-bottom: 1px solid var(--rule);
+}
+.menu-title { font-family: var(--serif); font-size: 14.5px; font-weight: 600; color: var(--ink); }
+.menu-sub { font-size: 11.5px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.menu-scroll {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 5px 5px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule-strong) transparent;
+}
+.menu-foot { flex: none; padding: 5px; border-top: 1px solid var(--rule); }
+
+.menu-label {
+  padding: 9px 9px 4px;
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--ink-faint);
+}
+.menu-note { margin: 0; padding: 2px 9px 8px; font-size: 12.5px; line-height: 1.55; color: var(--ink-faint); white-space: normal; }
+.menu-rule { height: 1px; margin: 5px 4px; background: var(--rule); flex: none; }
+
+.menu-item {
+  display: flex; align-items: center; gap: 9px; flex: none;
+  width: 100%; min-height: 30px; padding: 5px 9px;
+  font-family: inherit; font-size: 13px; line-height: 1.3; text-align: left;
+  color: var(--ink); background: none;
+  border: none; border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.menu-item:hover:not(:disabled), .menu-item:focus-visible { background: var(--rule); }
+.menu-item:focus-visible { outline-offset: -2px; }
+.menu-item:disabled { opacity: 0.45; cursor: default; }
+.menu-item-icon { width: 15px; height: 15px; flex: none; color: var(--ink-soft); }
+.menu-item[aria-checked='true'] .menu-item-icon { color: var(--accent); }
+.menu-item[aria-checked='false'] .menu-item-label { color: var(--ink-soft); }
+.menu-item-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-item-hint {
+  flex: none; margin-left: 14px;
+  font-size: 11.5px; color: var(--ink-faint);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.menu-item-hint--warn { color: var(--danger); }
 
 /* ─── Find bar ────────────────────────────────────────────────────────────── */
 
@@ -244,10 +343,13 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
   animation: slide-down var(--t-base) var(--ease);
 }
 .search-icon { width: 15px; height: 15px; color: var(--ink-faint); flex: none; }
-.search-bar input { flex: 1; max-width: 420px; }
+.search-bar input { flex: 1 1 160px; min-width: 0; max-width: 420px; }
 .search-bar input:focus { border-color: var(--accent); }
+.search-bar .icon-btn { flex: none; }
 .search-count {
-  font-size: 12px; color: var(--ink-faint); min-width: 74px;
+  flex: 0 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 12px; color: var(--ink-faint);
   font-variant-numeric: tabular-nums;
 }
 
@@ -263,21 +365,26 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
   border-bottom: 1px solid var(--rule);
 }
 .banner svg { width: 15px; height: 15px; flex: none; color: var(--accent); }
-.banner-text { flex: 1; }
+.banner-text { flex: 1; min-width: 0; }
+.banner .icon-btn { flex: none; }
 
 /* ─── Workspace ───────────────────────────────────────────────────────────── */
 
-.workspace { display: flex; flex: 1; min-height: 0; }
+.workspace { position: relative; display: flex; flex: 1; min-height: 0; }
 
 .sidebar {
-  width: 212px; flex: none;
+  width: var(--sidebar-w); flex: none;
   display: flex; flex-direction: column;
+  min-height: 0;
   background: var(--surface);
   border-right: 1px solid var(--rule);
 }
+/* Only used when the sidebar floats over the page (narrow windows). */
+.sidebar-scrim { display: none; }
 .sidebar-tabs { display: flex; flex: none; border-bottom: 1px solid var(--rule); }
 .sidebar-tab {
-  flex: 1; height: 32px; padding: 0 4px;
+  flex: 1; min-width: 0; height: 32px; padding: 0 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-family: inherit; font-size: 11.5px; font-weight: 500;
   color: var(--ink-faint); background: none; border: none;
   border-bottom: 2px solid transparent;
@@ -286,7 +393,7 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
 }
 .sidebar-tab--active { color: var(--ink); border-bottom-color: var(--accent); }
 .sidebar-panel {
-  flex: 1; overflow-y: auto; padding: 10px;
+  flex: 1; min-height: 0; overflow-y: auto; padding: 10px;
   scrollbar-width: thin;
   scrollbar-color: var(--rule-strong) transparent;
 }
@@ -329,7 +436,8 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
 .outline-item--collapsed > .outline-list { display: none; }
 .outline-spacer { width: 18px; flex: none; }
 .outline-link {
-  flex: 1; text-align: left; padding: 4px 5px;
+  flex: 1; min-width: 0; text-align: left; padding: 4px 5px;
+  overflow-wrap: anywhere;
   font-family: inherit; font-size: 12.5px; color: var(--ink-soft);
   background: none; border: none; border-radius: var(--r-sm);
   cursor: pointer;
@@ -344,9 +452,11 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
   border-bottom: 1px solid var(--rule);
 }
 .saved-section-title {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--ink-faint);
 }
+.saved-section-head .btn { flex: none; }
 .saved-list { display: flex; flex-direction: column; gap: 4px; }
 .saved-row {
   display: flex; align-items: center; gap: 3px;
@@ -373,7 +483,8 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
   display: flex; align-items: flex-start; justify-content: space-between; gap: 4px;
 }
 .saved-word-btn {
-  flex: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px;
+  flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px;
+  overflow-wrap: anywhere;
   padding: 0; font-family: var(--serif); font-size: 13.5px; color: var(--ink);
   background: none; border: none; cursor: pointer; text-align: left;
 }
@@ -391,6 +502,7 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
 .saved-word-meta {
   margin-top: 4px;
   font-size: 10.5px; color: var(--ink-faint);
+  overflow-wrap: anywhere;
 }
 
 /* ─── Document surface ────────────────────────────────────────────────────── */
@@ -423,19 +535,28 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
   transition: transform var(--t-fast) var(--ease);
 }
 
+/* "safe" centring: a page narrower than the window is centred; a page wider
+   than it (any zoom past fit-width) starts at the left edge instead of
+   overflowing both ways. Plain centring pushed the left part of a zoomed
+   page to a negative offset, where no scrollbar can ever reach it. */
 .pages {
-  display: flex; flex-direction: column; align-items: center;
+  display: flex; flex-direction: column; align-items: safe center;
   gap: 14px; padding: 12px calc(var(--page-margin) / 2) 40px;
   min-height: 100%;
+  width: max-content; min-width: 100%;
 }
+/* A book spread is a two-column grid: left pages hug the spine from the
+   left, right pages from the right, however their sizes differ. */
 .pages.pages--spread {
-  flex-direction: row;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: flex-start;
-  align-content: flex-start;
-  gap: 18px 16px;
+  display: grid;
+  grid-template-columns: max-content max-content;
+  justify-content: safe center;
+  align-content: start;
+  align-items: start;
+  gap: 18px 16px;   /* column gap must match SPREAD_COLUMN_GAP in viewer.js */
 }
+.pages.pages--spread > :nth-child(odd) { justify-self: end; }
+.pages.pages--spread > :nth-child(even) { justify-self: start; }
 
 .pdf-page-wrapper {
   position: relative; flex: none;
@@ -556,14 +677,17 @@ body.has-link-hover #pdf-container { cursor: pointer; }
 
 /* ─── Empty state ─────────────────────────────────────────────────────────── */
 
+/* Centred when it fits; on a short window it scrolls from the top rather
+   than losing its heading above the edge (that is what "safe" buys). */
 .empty-state {
   position: absolute; inset: 0;
-  min-height: 100%;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 14px; padding: 32px; text-align: center;
-  pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: safe center;
+  gap: 14px; padding: 32px 24px; text-align: center;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule-strong) transparent;
 }
-.empty-state > * { pointer-events: auto; }
+.empty-state > * { flex: none; max-width: 100%; }
 
 /* The mark is the product's own definition, set the way a gloss is set:
    the word, a marginal rule, and the note that explains it. */
@@ -597,7 +721,8 @@ body.has-link-hover #pdf-container { cursor: pointer; }
   font-size: 13.5px; line-height: 1.65; color: var(--ink-soft);
 }
 
-.recent-list { margin-top: 18px; width: min(340px, 100%); text-align: left; }
+.recent-list { margin-top: 18px; width: min(360px, 100%); text-align: left; }
+.recent-list:empty { display: none; }
 .recent-heading {
   margin: 0 0 6px; font-size: 11px; font-weight: 600;
   letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-faint);
@@ -613,7 +738,7 @@ body.has-link-hover #pdf-container { cursor: pointer; }
 .recent-item svg { width: 14px; height: 14px; flex: none; color: var(--ink-faint); }
 .recent-item:hover:not(:disabled) { background: var(--surface); color: var(--ink); }
 .recent-item:disabled { opacity: 0.45; cursor: default; }
-.recent-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-missing { font-size: 11px; color: var(--ink-faint); font-style: italic; }
 
 /* ─── The gloss ───────────────────────────────────────────────────────────── */
@@ -621,7 +746,7 @@ body.has-link-hover #pdf-container { cursor: pointer; }
 .popup {
   position: fixed; z-index: 60;
   width: 360px; max-width: calc(100vw - 24px);
-  max-height: min(440px, 60vh);
+  max-height: min(440px, max(190px, 60vh));
   display: flex; flex-direction: column;
   background: var(--raised);
   border: 1px solid var(--rule);
@@ -641,8 +766,9 @@ body.has-link-hover #pdf-container { cursor: pointer; }
   user-select: none;
 }
 .popup-head:active { cursor: grabbing; }
+.popup-head .icon-btn { flex: none; }
 .popup-word {
-  flex: 1; margin: 0;
+  flex: 1; min-width: 0; margin: 0;
   font-family: var(--serif); font-size: 19px; font-weight: 600;
   line-height: 1.45;                          /* room for Devanagari marks */
   color: var(--ink); word-break: break-word;
@@ -650,6 +776,13 @@ body.has-link-hover #pdf-container { cursor: pointer; }
 .popup-tabs {
   display: flex; gap: 2px; flex: none;
   padding: 0 10px 8px 13px; overflow-x: auto;
+  scrollbar-width: none;
+}
+.popup-tab { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+/* Chrome that belongs to the popup, not to the definition: hidden while the
+   definition's own text is being read out for Copy and Save. */
+.popup-body--plain :is(.source-badge, .popup-websearch, .popup-state, .popup-more, .popup-matched, .popup-entry-meta) {
+  display: none !important;
 }
 .popup-tab {
   padding: 4px 9px; flex: none;
@@ -819,7 +952,7 @@ body.has-link-hover #pdf-container { cursor: pointer; }
   border-bottom: 1px solid var(--rule);
 }
 .modal-head h2 {
-  margin: 0; font-family: var(--serif); font-weight: 600;
+  margin: 0; min-width: 0; font-family: var(--serif); font-weight: 600;
   font-size: 16px; letter-spacing: -0.01em;
 }
 .modal-layout { display: flex; flex: 1; min-height: 0; }
@@ -838,7 +971,7 @@ body.has-link-hover #pdf-container { cursor: pointer; }
 .modal-nav-btn:hover { background: var(--rule); }
 .modal-nav-btn--active { color: var(--ink); background: var(--rule); font-weight: 500; }
 .modal-body {
-  flex: 1; overflow-y: auto; padding: 18px 20px;
+  flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 18px 20px;
   scrollbar-width: thin;
   scrollbar-color: var(--rule-strong) transparent;
 }
@@ -893,7 +1026,23 @@ body.has-link-hover #pdf-container { cursor: pointer; }
 .prefs-radio-group label { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 .prefs-stat { font-size: 13px; color: var(--ink-soft); margin-bottom: 7px; }
 .prefs-stat strong { color: var(--ink); font-variant-numeric: tabular-nums; }
-.prefs-actions { display: flex; gap: 8px; margin-top: 16px; }
+.prefs-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.prefs-field select { min-width: 0; max-width: 100%; }
+.prefs-hint code {
+  padding: 1px 5px; font-size: 11.5px;
+  background: var(--rule); border-radius: 4px;
+}
+
+.progress {
+  height: 4px; overflow: hidden;
+  background: var(--rule); border-radius: 999px;
+}
+.progress-fill {
+  width: 100%; height: 100%;
+  background: var(--accent);
+  transform-origin: 0 50%; transform: scaleX(0);
+  transition: transform var(--t-base) linear;
+}
 
 input[type='radio'], input[type='checkbox'] { accent-color: var(--accent); }
 
@@ -927,7 +1076,7 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent); }
 .dict-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dict-meta { font-size: 11px; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dict-meta--error { color: var(--danger); }
-.dict-actions { display: flex; gap: 1px; }
+.dict-actions { display: flex; gap: 1px; flex: none; }
 
 /* ─── Overlays ────────────────────────────────────────────────────────────── */
 
@@ -978,32 +1127,85 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent); }
 /* ─── Read mode ───────────────────────────────────────────────────────────── */
 
 body.read-mode .toolbar,
-body.read-mode .sidebar { display: none; }
+body.read-mode .sidebar,
+body.read-mode .sidebar-scrim { display: none; }
 body.read-mode .pages { padding-top: 24px; }
 
-/* ─── Narrow windows ──────────────────────────────────────────────────────── */
+/* ─── Narrow and short windows ────────────────────────────────────────────── */
 
-@media (max-width: 860px) {
-  .source-chips { display: none; }
-  .sidebar { width: 148px; }
+/* The toolbar looks after itself (toolbar.js). These rules cover everything
+   else, down to the 420 × 360 minimum window. */
+
+@media (max-width: 760px) {
+  :root { --page-margin: 24px; }
+
+  /* The sidebar floats over the page instead of taking a third of it. */
+  .sidebar {
+    position: absolute; z-index: 40; top: 0; bottom: 0; left: 0;
+    width: min(264px, 82vw);
+    box-shadow: var(--shadow-lg);
+  }
+  .sidebar-scrim:not([hidden]) {
+    display: block; position: absolute; inset: 0; z-index: 39;
+    background: rgba(20, 18, 16, 0.28);
+  }
+
+  .modal-overlay { padding: 12px; }
+  .modal-body { padding: 16px; }
 }
-@media (max-width: 680px) {
-  .toolbar-group--center { gap: 2px; }
-  .zoom-menu { width: 82px; }
-  .sidebar { position: absolute; z-index: 40; top: var(--toolbar-h); bottom: 0;
-             box-shadow: var(--shadow-md); }
+
+@media (max-width: 600px) {
+  /* Preferences: the section list becomes a row of tabs above the content. */
+  .modal-layout { flex-direction: column; }
+  .modal-nav {
+    width: auto; flex-direction: row; gap: 2px;
+    padding: 6px 8px; overflow-x: auto;
+    border-right: none; border-bottom: 1px solid var(--rule);
+    scrollbar-width: none;
+  }
+  .modal-nav-btn { flex: none; padding: 6px 10px; white-space: nowrap; }
+
+  .doc-info-row { grid-template-columns: 88px 1fr; }
+  .empty-state { padding: 24px 16px; }
+  .drop-card { padding: 20px 24px; margin: 0 16px; text-align: center; }
+}
+
+@media (max-height: 560px) {
+  /* Give a short window to the content, not to decoration. */
+  .empty-mark { display: none; }
+  .empty-state { gap: 10px; padding-top: 20px; padding-bottom: 20px; }
+  .empty-title { font-size: 23px; }
+  .recent-list { margin-top: 8px; }
+  .modal-overlay { padding: 10px; }
+  .modal-head { padding: 10px 12px 9px 16px; }
 }
 
 /* ─── Print ───────────────────────────────────────────────────────────────── */
 
+/* Printing never uses the on-screen pages (only a few exist at a time, at
+   screen zoom). renderer/js/print.js builds #print-root — one image per page
+   at print resolution — and this block shows that and nothing else. */
+
+#print-root { display: none; }
+
 @media print {
-  .toolbar, .sidebar, .search-bar, .banner, .popup, .modal-overlay,
-  .loading-indicator, .toast, .reading-progress { display: none !important; }
-  html, body, .app-shell, .workspace, .pdf-container {
-    height: auto !important; overflow: visible !important; background: #fff !important;
+  html, body {
+    width: 100%; height: 100%;
+    margin: 0 !important; overflow: visible !important;
+    background: #fff !important;
   }
-  .pages { padding: 0 !important; gap: 0 !important; }
-  .pdf-page-wrapper { box-shadow: none !important; page-break-after: always; }
+  body > :not(#print-root) { display: none !important; }
+
+  #print-root { display: block; height: 100%; }
+  .print-page {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    break-after: page; break-inside: avoid;
+  }
+  .print-page:last-child { break-after: auto; }
+  .print-page img { display: block; max-width: 100%; max-height: 100%; }
+  .print-page--failed { font-family: var(--sans); font-size: 12pt; color: #555; }
 }
 
 /* ─── Reduced motion ──────────────────────────────────────────────────────── */
@@ -1016,4 +1218,12 @@ body.read-mode .pages { padding-top: 24px; }
     scroll-behavior: auto !important;
   }
   .spinner, .spin { animation: none !important; border-top-color: var(--accent); }
+}
+
+/* ─── Forced colours (Windows high contrast) ──────────────────────────────── */
+
+@media (forced-colors: active) {
+  .icon-btn[aria-pressed='true'], .menu-item[aria-checked='true'], .sidebar-tab--active,
+  .thumb--current .thumb-frame { outline: 2px solid Highlight; outline-offset: -2px; }
+  .popup, .menu, .modal, .toast { border: 1px solid CanvasText; }
 }

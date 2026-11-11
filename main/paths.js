@@ -41,18 +41,27 @@ function looksLikePdfName(p) {
  * the name contains spaces or non-ASCII characters. Any other scheme is
  * rejected outright: nothing remote is ever opened this way.
  */
-function toLocalPath(raw, cwd) {
+function toLocalPath(raw, cwd, platform = process.platform) {
   if (typeof raw !== 'string' || raw.length === 0 || raw.startsWith('-')) return null;
 
-  if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) {
+  const windows = platform === 'win32';
+  const pathApi = windows ? path.win32 : path.posix;
+
+  // A Windows drive path (C:\Books\a.pdf, D:/a.pdf) starts with what looks
+  // like a one-letter URL scheme. It is a path: no registered scheme is a
+  // single letter, and treating it as one rejected every file Explorer,
+  // "Open with" and the command line handed to Gloss on Windows.
+  const drivePath = windows && /^[a-z]:[\\/]/i.test(raw);
+
+  if (!drivePath && /^[a-z][a-z0-9+.-]*:/i.test(raw)) {
     if (!/^file:/i.test(raw)) return null;
     try {
-      return fileURLToPath(raw);
+      return fileURLToPath(raw, { windows });
     } catch {
       return null;
     }
   }
-  return path.resolve(cwd || process.cwd(), raw);
+  return pathApi.resolve(cwd || process.cwd(), raw);
 }
 
 /**
@@ -144,6 +153,7 @@ module.exports = {
   approve,
   isApproved,
   looksLikePdfName,
+  toLocalPath,
   extractPdfArgs,
   readPdfSafely,
 };

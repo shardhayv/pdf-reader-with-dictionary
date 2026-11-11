@@ -77,8 +77,11 @@ function createMainWindow() {
   const bounds = restoredBounds();
   mainWindow = new BrowserWindow({
     ...bounds,
-    minWidth: 680,
-    minHeight: 480,
+    // The toolbar folds its controls into a menu as space runs out (see
+    // renderer/js/toolbar.js), so the window can shrink to a third of a
+    // 1366 px laptop screen and still be fully usable.
+    minWidth: 420,
+    minHeight: 360,
     icon: APP_ICON,
     show: false,
     autoHideMenuBar: true,

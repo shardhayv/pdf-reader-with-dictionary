@@ -6,7 +6,10 @@
  * persisted reading state.
  */
 
-import { refs, $, esc, show, hide, isShown, toast, announce, debounce, scrollBehavior } from './dom.js';
+import {
+  refs, $, esc, show, hide, isShown, toast, announce, debounce, scrollBehavior,
+  openModal, closeModal, modalOpen,
+} from './dom.js';
 import { icons } from './icons.js';
 import * as viewer from './viewer.js';
 import * as popup from './popup.js';
@@ -16,6 +19,10 @@ import * as links from './links.js';
 import * as search from './search.js';
 import * as sidebar from './sidebar.js';
 import * as prefsModal from './prefsModal.js';
+import * as toolbar from './toolbar.js';
+import * as sources from './sources.js';
+import * as print from './print.js';
+import { closeTopMenu, closeAllMenus } from './menu.js';
 
 const STATE_SAVE_DEBOUNCE_MS = 700;
 
@@ -26,6 +33,7 @@ const app = {
   docSize: 0,
   readMode: false,
   passwordResolve: null,
+  lookupPage: null,   // page the current popup's word was selected on
 };
 
 // ── Recovery boundary / boot ──────────────────────────────────────────────────
@@ -104,6 +112,13 @@ async function boot() {
     onToggleSaveWord: toggleSavedWord,
   });
   search.init();
+  print.init();
+  toolbar.init();
+  sources.init({
+    onToggleDictionary: toggleDictionarySource,
+    onToggleOnline: toggleOnlineSource,
+    onManage: () => prefsModal.open('dictionaries'),
+  });
   sidebar.init({
     onVisibilityChange: (visible) => window.gloss.setPrefs({ sidebarVisible: visible })
       .catch(error => logActionFailure('could not save the sidebar preference', error)),
@@ -128,7 +143,7 @@ async function boot() {
     applyPrefs: applyPrefs,
     onDictsChanged: async () => {
       lookup.invalidateDictionaries();
-      await refreshSourceChips();
+      await refreshSources();
     },
     onRecentsCleared: () => renderEmptyState().catch(error =>
       logActionFailure('could not refresh recent documents', error)),
@@ -140,7 +155,13 @@ async function boot() {
     clearLookupCache: () => lookup.clearCache(),
   });
 
-  selection.attach(refs.pages(), (raw, rect) => lookup.lookupSelection(raw, rect));
+  selection.attach(refs.pages(), (raw, rect) => {
+    // Remember the page the word is on, not merely the first page in view:
+    // with two pages on screen those differ, and a saved word should point
+    // back to where it was actually read.
+    app.lookupPage = viewer.pageAtClientPoint(rect.left + 1, rect.top + rect.height / 2);
+    lookup.lookupSelection(raw, rect);
+  });
   links.attach(refs.pages(), {
     openExternal: openExternalLink,
     onError: (message) => toast(message),
@@ -155,14 +176,14 @@ async function boot() {
   sidebar.setTab(app.prefs.sidebarTab);
   if (app.prefs.sidebarVisible) sidebar.setVisible(true);
 
-  await refreshSourceChips();
+  await refreshSources();
   await renderEmptyState();
 
   window.gloss.onOpenFile(handleOpenResult);
   window.gloss.onCommand(handleCommand);
   window.gloss.onDictionariesChanged(({ failed = [], warnings = [] } = {}) => {
     lookup.invalidateDictionaries();
-    refreshSourceChips().catch(error =>
+    refreshSources().catch(error =>
       logActionFailure('could not refresh restored lookup sources', error));
     const notices = [];
     if (failed.length > 0) {
@@ -182,7 +203,12 @@ async function boot() {
     }
   });
 
-  window.addEventListener('resize', debounce(() => viewer.handleResize(), 180));
+  // The reading area changes size for more reasons than the window does:
+  // the sidebar, the find bar, a document notice, read mode. Observing the
+  // container itself covers all of them, so a "fit" zoom always really fits.
+  const refit = debounce(() => viewer.handleResize(), 120);
+  new ResizeObserver(refit).observe(refs.container());
+  window.addEventListener('resize', () => popup.keepInView());
   document.body.dataset.ready = '1';
 
   // Listeners are live — main may now deliver a queued document.
@@ -205,7 +231,7 @@ async function applyPrefs(delta) {
   app.prefs = await window.gloss.setPrefs(delta);
   applyTheme(app.prefs.theme, app.prefs.pageTone);
   lookup.setPrefs(app.prefs);
-  await refreshSourceChips();
+  await refreshSources();
 }
 
 function applyTheme(theme, pageTone = app.prefs?.pageTone || 'original') {
@@ -224,6 +250,7 @@ function applyTheme(theme, pageTone = app.prefs?.pageTone || 'original') {
   if (toneBtn) {
     const label = PAGE_TONE_LABELS[tone] || 'Original white';
     toneBtn.title = `Page paper tint: ${label} (Ctrl+Shift+D)`;
+    toneBtn.dataset.menuLabel = `Page tint: ${label}`;
     toneBtn.setAttribute('aria-pressed', String(tone !== 'original'));
   }
 }
@@ -255,7 +282,7 @@ async function toggleSavedWord({ word, definition, source }) {
       definition: String(definition || '').trim().slice(0, 1000),
       source: String(source || '').trim().slice(0, 120),
       docName: app.docName || '',
-      page: viewer.hasDocument() ? viewer.currentPage() : null,
+      page: viewer.hasDocument() ? (app.lookupPage || viewer.currentPage()) : null,
       savedAt: Date.now(),
     });
     await applyPrefs({ savedWords: current.slice(0, 500) });
@@ -288,60 +315,42 @@ async function exportSavedWordsMarkdown() {
   try {
     await navigator.clipboard.writeText(lines.join('\n'));
     toast(`Copied ${words.length} vocabulary ${words.length === 1 ? 'entry' : 'entries'} as Markdown`);
-  } catch {
+  } catch (error) {
+    logActionFailure('could not copy the vocabulary', error);
     toast('Could not copy vocabulary to clipboard.');
   }
 }
 
-/** Toolbar chips showing which sources are active. */
-async function refreshSourceChips() {
-  const dicts = await window.gloss.listDictionaries();
-  const chips = $('source-chips');
-  // Keep other books' glossaries loaded without letting them clutter or
-  // influence the document currently being read.
-  const visible = dicts.filter(d => d.applicable);
-  const parts = visible.map(d => `
-    <button class="chip${d.enabled ? '' : ' chip--off'}" data-chip-path="${esc(d.path)}"
-            title="${esc(d.name)} — click to ${d.enabled ? 'disable' : 'enable'}"
-            aria-pressed="${d.enabled}">${esc(d.name)}</button>`);
-  parts.push(`
-    <button class="chip chip--wikt${app.prefs.wiktionaryEnabled ? '' : ' chip--off'}" data-chip-wikt="1"
-            title="Wiktionary — word meanings; click to ${app.prefs.wiktionaryEnabled ? 'disable' : 'enable'}"
-            aria-pressed="${app.prefs.wiktionaryEnabled}">Wiktionary</button>
-    <button class="chip chip--wiki${app.prefs.wikipediaEnabled ? '' : ' chip--off'}" data-chip-wiki="1"
-            title="Wikipedia (${esc(app.prefs.wikipediaLang)}) — click to ${app.prefs.wikipediaEnabled ? 'disable' : 'enable'}"
-            aria-pressed="${app.prefs.wikipediaEnabled}">Wikipedia</button>`);
-  if (visible.length === 0) {
-    parts.unshift('<span class="chip-hint">No local dictionaries</span>');
-  }
-  chips.innerHTML = parts.join('');
+/** Redraw the toolbar's Sources control from the live dictionary list. */
+async function refreshSources() {
+  const dictionaries = await window.gloss.listDictionaries();
+  sources.render(dictionaries, app.prefs);
+  toolbar.requestRelayout(); // the count's width can change
 }
 
-$('source-chips').addEventListener('click', async (e) => {
-  const chip = e.target.closest('.chip');
-  if (!chip) return;
-  chip.disabled = true;
+async function toggleDictionarySource(dictPath) {
   try {
-    if (chip.dataset.chipWikt) {
-      await applyPrefs({ wiktionaryEnabled: !app.prefs.wiktionaryEnabled });
-    } else if (chip.dataset.chipWiki) {
-      await applyPrefs({ wikipediaEnabled: !app.prefs.wikipediaEnabled });
-    } else {
-      const result = await window.gloss.toggleDictionary(chip.dataset.chipPath);
-      if (!result?.success) throw new Error('Dictionary is no longer loaded');
-      lookup.invalidateDictionaries();
-      await refreshSourceChips();
-    }
+    const result = await window.gloss.toggleDictionary(dictPath);
+    if (!result?.success) throw new Error('Dictionary is no longer loaded');
+    lookup.invalidateDictionaries();
+    await refreshSources();
   } catch (error) {
     actionFailed('could not change a lookup source', error,
       'That lookup source could not be changed. Your current settings were kept.');
-    await refreshSourceChips().catch(() => {});
-  } finally {
-    // refreshSourceChips normally replaces this node; this covers a failed
-    // refresh so the control never remains permanently disabled.
-    if (chip.isConnected) chip.disabled = false;
+    await refreshSources().catch(() => {});
   }
-});
+}
+
+async function toggleOnlineSource(which) {
+  try {
+    if (which === 'wiktionary') await applyPrefs({ wiktionaryEnabled: !app.prefs.wiktionaryEnabled });
+    else await applyPrefs({ wikipediaEnabled: !app.prefs.wikipediaEnabled });
+  } catch (error) {
+    actionFailed('could not change a lookup source', error,
+      'That lookup source could not be changed. Your current settings were kept.');
+    await refreshSources().catch(() => {});
+  }
+}
 
 // ── Empty state / recents ─────────────────────────────────────────────────────
 
@@ -428,7 +437,10 @@ async function handleOpenResult(result) {
   app.docPath = result.path;
   app.docName = result.name;
   app.docSize = result.size || 0;
+  app.lookupPage = null;
   document.title = `${result.name} — Gloss`;
+  // A definition from the previous book has nothing to say about this one.
+  popup.closePopup({ force: true });
   hide(refs.emptyState());
   search.resetForNewDocument();
   hideBanner();
@@ -443,7 +455,7 @@ async function handleOpenResult(result) {
       'The PDF is open, but Gloss may not remember this reading position next time.');
   }
   lookup.invalidateDictionaries();             // active book glossary may change
-  await refreshSourceChips().catch(error =>
+  await refreshSources().catch(error =>
     logActionFailure('could not refresh lookup sources after opening a PDF', error));
   await renderEmptyState().catch(error =>
     logActionFailure('could not refresh recents after opening a PDF', error));
@@ -464,15 +476,14 @@ function requestPassword(retry) {
     app.passwordResolve = resolve;
     input.value = '';
     error.hidden = !retry;
-    show(overlay);
-    input.focus();
+    openModal(overlay, { focus: input });
   });
 }
 
 function resolvePassword(value) {
   const resolve = app.passwordResolve;
   app.passwordResolve = null;
-  hide(refs.passwordOverlay());
+  closeModal(refs.passwordOverlay());
   resolve?.(value);
 }
 
@@ -552,18 +563,18 @@ async function openDocInfoModal() {
     try {
       await navigator.clipboard.writeText(app.docPath || '');
       toast('Copied file path');
-    } catch {
+    } catch (error) {
+      logActionFailure('could not copy the file path', error);
       toast('Could not copy file path.');
     }
   });
 
-  show(overlay);
-  closeBtn.focus();
+  openModal(overlay, { focus: closeBtn });
 }
 
 function closeDocInfoModal() {
   const overlay = $('doc-info-overlay');
-  if (overlay && isShown(overlay)) hide(overlay);
+  if (overlay && isShown(overlay)) closeModal(overlay);
 }
 
 $('doc-info-close')?.addEventListener('click', closeDocInfoModal);
@@ -582,16 +593,13 @@ function wireToolbar() {
   $('btn-zoom-out').addEventListener('click', () => viewer.zoomOut());
   $('btn-rotate').addEventListener('click', (e) => viewer.rotateBy(e.shiftKey ? -90 : 90));
   $('btn-spread')?.addEventListener('click', () => viewer.toggleSpreadMode());
-  $('btn-bookmark')?.addEventListener('click', () => {
-    const added = viewer.toggleBookmark();
-    toast(added ? `Bookmarked page ${viewer.currentPage()}` : `Removed bookmark on page ${viewer.currentPage()}`);
-  });
+  $('btn-bookmark')?.addEventListener('click', toggleBookmarkWithNotice);
   $('btn-page-tone').addEventListener('click', cyclePageTone);
   $('btn-doc-info').addEventListener('click', openDocInfoModal);
   $('btn-history-back').addEventListener('click', () => viewer.goBack());
   $('btn-history-forward').addEventListener('click', () => viewer.goForward());
-  $('btn-prev-page').addEventListener('click', () => viewer.goToPage(viewer.currentPage() - 1));
-  $('btn-next-page').addEventListener('click', () => viewer.goToPage(viewer.currentPage() + 1));
+  $('btn-prev-page').addEventListener('click', () => stepPage(-1));
+  $('btn-next-page').addEventListener('click', () => stepPage(1));
   $('open-pdf-cta').addEventListener('click', openViaDialog);
 
   $('zoom-menu').addEventListener('change', (e) => {
@@ -601,24 +609,38 @@ function wireToolbar() {
   });
 
   const pageInput = refs.pageInput();
+  pageInput.addEventListener('focus', () => pageInput.select());
   pageInput.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     const n = parseInt(pageInput.value, 10);
-    if (Number.isFinite(n)) viewer.goToPage(n, { recordHistory: true });
+    if (Number.isFinite(n)) viewer.goToPage(n, { instant: true, recordHistory: true });
     pageInput.blur();
+    refs.container().focus({ preventScroll: true });
   });
   pageInput.addEventListener('blur', () => { pageInput.value = String(viewer.currentPage()); });
+}
+
+/**
+ * Previous / next page. In a two-page spread a "page turn" is the whole
+ * spread, so the step is two.
+ */
+function stepPage(direction) {
+  const step = viewer.spreadMode() === 'two-page' ? 2 : 1;
+  viewer.goToPage(viewer.currentPage() + direction * step);
 }
 
 // ── Viewer events → UI + persistence ──────────────────────────────────────────
 
 const persistState = debounce(() => {
   if (!app.docPath) return;
+  const position = viewer.readingPosition();
   window.gloss.updateDocState(app.docPath, {
     page: viewer.currentPage(),
     zoomMode: viewer.zoomMode(),
     zoomScale: viewer.zoomScale(),
     scrollFraction: viewer.scrollFraction(),
+    topPage: position.page,
+    topOffset: position.offset,
     rotation: viewer.rotation(),
     spreadMode: viewer.spreadMode(),
     bookmarks: viewer.bookmarks(),
@@ -648,11 +670,14 @@ function updateReadingProgress() {
 
 function wireViewerEvents() {
   viewer.on('documentopened', ({ total }) => {
-    refs.pageInput().value = '1';
-    refs.pageInput().max = String(total);
+    const input = refs.pageInput();
+    input.value = String(viewer.currentPage());
+    // Size the field to the page count so "of 9" and "of 1204" both sit right.
+    input.style.setProperty('--digits', String(Math.max(2, String(total).length)));
     refs.pageTotal().textContent = `of ${total}`;
     $('viewer-controls').hidden = false;
     updateReadingProgress();
+    toolbar.relayout();
   });
 
   const syncBookmarkBtn = () => {
@@ -690,8 +715,12 @@ function wireViewerEvents() {
   viewer.on('historychanged', ({ canBack, canForward }) => {
     const backBtn = $('btn-history-back');
     const fwdBtn = $('btn-history-forward');
-    if (backBtn) backBtn.hidden = !canBack;
-    if (fwdBtn) fwdBtn.hidden = !canForward;
+    // Both appear together once there is any history, so the toolbar does
+    // not reshuffle on every jump; the one with nowhere to go is disabled.
+    const any = canBack || canForward;
+    if (backBtn) { backBtn.hidden = !any; backBtn.disabled = !canBack; }
+    if (fwdBtn) { fwdBtn.hidden = !any; fwdBtn.disabled = !canForward; }
+    toolbar.relayout();
   });
 
   viewer.on('zoomchanged', ({ mode, scale }) => {
@@ -776,28 +805,59 @@ function inTextField(target) {
     (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
 }
 
+/**
+ * A control that has its own meaning for Space and Enter. Pressing Space on a
+ * focused button must press the button — not scroll the document behind it.
+ */
+function onActivatable(target) {
+  return target instanceof Element &&
+    !!target.closest('button, a[href], summary, [role="link"], [role="button"], [role="tab"], [role^="menuitem"]');
+}
+
 /** Escape closes exactly one layer, topmost first. */
-function handleEscape() {
+function handleEscape(target) {
+  if (print.isPreparing()) { print.cancelPrint(); return true; }
   if (isShown(refs.passwordOverlay())) { resolvePassword(null); return true; }
   if ($('doc-info-overlay') && isShown($('doc-info-overlay'))) { closeDocInfoModal(); return true; }
   if (prefsModal.isOpen()) { prefsModal.close(); return true; }
+  if (closeTopMenu()) return true;
+  // The definition floats above the find bar, so it goes first — unless the
+  // reader is typing in the find bar, in which case Escape means "stop finding".
+  const inSearch = target instanceof Element && !!target.closest('#search-bar');
+  if (popup.isOpen() && !inSearch) { popup.closePopup({ force: true }); return true; }
   if (search.isActive()) { search.closeSearch(); return true; }
   if (popup.isOpen()) { popup.closePopup({ force: true }); return true; }
+  if (sidebar.isFloating()) { sidebar.setVisible(false); return true; }
   if (app.readMode) { requestReadMode(false); return true; }
   return false;
+}
+
+function toggleBookmarkWithNotice() {
+  if (!viewer.hasDocument()) return;
+  const added = viewer.toggleBookmark();
+  toast(added ? `Bookmarked page ${viewer.currentPage()}` : `Removed bookmark on page ${viewer.currentPage()}`);
 }
 
 function wireKeyboard() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      if (handleEscape()) e.preventDefault();
+      if (handleEscape(e.target)) e.preventDefault();
       return;
     }
 
-    const editing = inTextField(e.target);
-    const accel = e.ctrlKey || e.metaKey;
+    // A dialog owns the keyboard while it is open. Without this, "R" rotated
+    // the document behind Preferences and Space scrolled it.
+    if (modalOpen()) return;
 
-    if (!editing && e.altKey && !accel && !e.shiftKey) {
+    const target = e.target;
+    const editing = inTextField(target);
+    const accel = e.ctrlKey || e.metaKey;
+    // A <select> uses arrows, Home/End, Space and typed letters itself; a menu
+    // handles its own arrows.
+    const inSelect = target instanceof HTMLElement && target.tagName === 'SELECT';
+    const inMenu = target instanceof Element && !!target.closest('.menu');
+
+    if (!editing && !inSelect && e.altKey && !accel && !e.shiftKey) {
       if (e.key === 'ArrowLeft') {
         if (viewer.goBack()) e.preventDefault();
         return;
@@ -829,29 +889,23 @@ function wireKeyboard() {
           e.preventDefault(); viewer.zoomOut(); return;
         }
         switch (e.key.toLowerCase()) {
-          case 'f': e.preventDefault(); search.openSearch(); return;
-          case 'o': e.preventDefault(); openViaDialog(); return;
+          case 'f': e.preventDefault(); closeAllMenus(); search.openSearch(); return;
+          case 'o': e.preventDefault(); closeAllMenus(); openViaDialog(); return;
           case 'd': e.preventDefault(); defineSelection(); return;
-          case 'b':
-            if (viewer.hasDocument()) {
-              e.preventDefault();
-              const added = viewer.toggleBookmark();
-              toast(added ? `Bookmarked page ${viewer.currentPage()}` : `Removed bookmark on page ${viewer.currentPage()}`);
-            }
-            return;
-          case 'i': e.preventDefault(); openDocInfoModal(); return;
-          case 'p': e.preventDefault(); if (viewer.hasDocument()) window.print(); return;
-          case ',': e.preventDefault(); prefsModal.open(); return;
+          case 'b': if (viewer.hasDocument()) { e.preventDefault(); toggleBookmarkWithNotice(); } return;
+          case 'i': e.preventDefault(); closeAllMenus(); openDocInfoModal(); return;
+          case 'p': e.preventDefault(); closeAllMenus(); print.printDocument(); return;
+          case ',': e.preventDefault(); closeAllMenus(); prefsModal.open(); return;
           default: break;
         }
       }
     }
 
-    if (editing) return;
+    if (editing || inSelect) return;
 
     if (e.key === 'F9') { e.preventDefault(); sidebar.toggle(); return; }
     if (e.key === 'F11') { e.preventDefault(); requestReadMode(!app.readMode); return; }
-    if (!viewer.hasDocument()) return;
+    if (!viewer.hasDocument() || inMenu) return;
 
     if (!accel && !e.altKey) {
       if (e.key === 'r' || e.key === 'R') {
@@ -877,17 +931,32 @@ function wireKeyboard() {
       }
     }
 
+    // Reading keys from here on; a shortcut held with a modifier is not one.
+    if (accel || e.altKey) return;
+
     const container = refs.container();
     const behavior = scrollBehavior();
+    const screenful = container.clientHeight * 0.92;
     switch (e.key) {
-      case 'PageDown':
       case ' ':
+        if (onActivatable(target)) return;   // Space presses the focused control
         e.preventDefault();
-        container.scrollBy({ top: container.clientHeight * 0.92, behavior });
+        container.scrollBy({ top: e.shiftKey ? -screenful : screenful, behavior });
+        break;
+      case 'PageDown':
+        e.preventDefault();
+        container.scrollBy({ top: screenful, behavior });
         break;
       case 'PageUp':
         e.preventDefault();
-        container.scrollBy({ top: -container.clientHeight * 0.92, behavior });
+        container.scrollBy({ top: -screenful, behavior });
+        break;
+      case 'ArrowDown':
+      case 'ArrowUp':
+        // Native scrolling only works while the page itself has focus; after
+        // using a toolbar button the arrows would otherwise go dead.
+        e.preventDefault();
+        container.scrollBy({ top: e.key === 'ArrowDown' ? 64 : -64, behavior: 'auto' });
         break;
       case 'Home':
         e.preventDefault();
@@ -898,9 +967,9 @@ function wireKeyboard() {
         container.scrollTo({ top: container.scrollHeight, behavior });
         break;
       case 'ArrowRight':
-        e.preventDefault(); viewer.goToPage(viewer.currentPage() + 1); break;
+        e.preventDefault(); stepPage(1); break;
       case 'ArrowLeft':
-        e.preventDefault(); viewer.goToPage(viewer.currentPage() - 1); break;
+        e.preventDefault(); stepPage(-1); break;
       default: break;
     }
   });
@@ -914,7 +983,14 @@ function defineSelection() {
 
 // ── Commands from the application menu ────────────────────────────────────────
 
+/** Commands that make sense even while a dialog is open. */
+const ALWAYS_ALLOWED_COMMANDS = new Set(['readMode', 'openRecent', 'open', 'clearRecents']);
+
 function handleCommand({ name, arg }) {
+  // The application menu stays clickable while a dialog is up; rotating or
+  // zooming the document hidden behind it would only confuse.
+  if (modalOpen() && !ALWAYS_ALLOWED_COMMANDS.has(name)) return;
+  closeAllMenus();
   switch (name) {
     case 'open': openViaDialog(); break;
     case 'openRecent':
@@ -930,14 +1006,14 @@ function handleCommand({ name, arg }) {
     case 'addDictionaries':
       window.gloss.addDictionaries().then(async () => {
         lookup.invalidateDictionaries();
-        await refreshSourceChips();
+        await refreshSources();
       }).catch(error =>
         actionFailed('could not add lookup sources', error,
           'Dictionaries could not be added. Existing sources were kept.'));
       break;
     case 'prefs': prefsModal.open(); break;
     case 'docInfo': openDocInfoModal(); break;
-    case 'print': if (viewer.hasDocument()) window.print(); break;
+    case 'print': print.printDocument(); break;
     case 'search': search.openSearch(); break;
     case 'define': defineSelection(); break;
     case 'sidebar': sidebar.toggle(); break;
@@ -948,12 +1024,7 @@ function handleCommand({ name, arg }) {
     case 'rotateCw': viewer.rotateBy(90); break;
     case 'rotateCcw': viewer.rotateBy(-90); break;
     case 'toggleSpread': viewer.toggleSpreadMode(); break;
-    case 'toggleBookmark':
-      if (viewer.hasDocument()) {
-        const added = viewer.toggleBookmark();
-        toast(added ? `Bookmarked page ${viewer.currentPage()}` : `Removed bookmark on page ${viewer.currentPage()}`);
-      }
-      break;
+    case 'toggleBookmark': toggleBookmarkWithNotice(); break;
     case 'cyclePageTone': cyclePageTone(); break;
     case 'historyBack': viewer.goBack(); break;
     case 'historyForward': viewer.goForward(); break;
@@ -965,6 +1036,7 @@ function handleCommand({ name, arg }) {
 function setReadMode(on) {
   app.readMode = !!on;
   document.body.classList.toggle('read-mode', app.readMode);
+  closeAllMenus();
   viewer.handleResize();
 }
 

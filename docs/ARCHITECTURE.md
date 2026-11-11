@@ -67,8 +67,14 @@ HTML. Two independent locks:
    nothing navigable in it.
 
 Behind both, `main/security.js` denies `will-navigate`, `will-redirect`,
-`will-frame-navigate`, `setWindowOpenHandler`, and all permission requests, and
-`shell:openExternal` accepts only `http:`/`https:` after parsing the URL.
+`will-frame-navigate` and `setWindowOpenHandler`, and `shell:openExternal`
+accepts only `http:`/`https:` after parsing the URL.
+
+Web permissions are denied with exactly one exception:
+`clipboard-sanitized-write`, granted only to the app's own `file://` page.
+Chromium routes `navigator.clipboard.writeText` through the permission
+handlers, so the earlier blanket denial silently broke every Copy button.
+Reading the clipboard, and every other permission, stays denied.
 
 `test/e2e/security.spec.js` runs 25 payloads — unquoted handlers, `javascript:`,
 `data:`, `file:`, `vbscript:`, mXSS via `noscript` and `math/mglyph`, remote
@@ -85,6 +91,11 @@ lazily:
 
 - an `IntersectionObserver` with a 600 px root margin mounts pages within
   `RENDER_BUFFER` (2) of the viewport;
+- the **current page** is computed from the scroll position by binary search
+  over the wrappers — the first page with 8% of its height on screen, or a
+  third of the window for a page far taller than it. (An observer threshold
+  is a fraction of the *page*; zoom far into a large sheet and that fraction
+  is never reached, so the page number froze.)
 - pages further than `DESTROY_DISTANCE` (5) away are torn back down to
   placeholders, cancelling any in-flight `RenderTask`;
 - canvases are capped at `MAX_CANVAS_PIXELS` (16 M device pixels) so a deep zoom
@@ -112,8 +123,43 @@ thumbnail object URLs, and destroys the `PDFDocumentProxy` and its loading task.
 Zoom applies instantly by rescaling the existing canvas with CSS and marking
 pages stale, then re-renders visible pages at the new scale after a 140 ms
 debounce. The result is a responsive zoom that never queues a render storm
-during a wheel gesture. Scroll offsets are adjusted around an anchor point so
-`Ctrl`+wheel keeps the point under the cursor fixed.
+during a wheel gesture.
+
+The anchor is kept as a position *within a page* (`captureAnchor` /
+`restoreAnchor`): which page is under the point, and how far across and down
+it. Multiplying the scroll offset by the zoom ratio looks equivalent and is
+not — the gaps between pages and the padding around them do not scale, and two
+hundred pages into a book that fixed space had added up to a ~300 px jump on
+every zoom step. Wheel zoom anchors the cursor, toolbar zoom the centre, and
+a resize in a fit mode the top edge, since that is the line being read.
+
+The reading area is watched with a `ResizeObserver` rather than the window's
+`resize` event, so the sidebar, find bar, document notice and read mode all
+re-fit a "fit" zoom, not just a window drag.
+
+A page wider than the window (any zoom past fit-width) is laid out with
+`safe` centring. Plain centring overflows both ways, and the half that
+overflows to the left sits at a negative offset no scrollbar can reach.
+
+### Reading position
+
+`readingPosition()` reports the page at the top of the viewport and the
+fraction of that page scrolled past. That pair — not a pixel offset, and not a
+fraction of the whole scroll height — is what is saved per document and what
+the back/forward history stores, because it means the same thing after the
+zoom, the window size or the sidebar changes. Documents saved by older
+releases fall back to their stored scroll fraction.
+
+### Printing
+
+The DOM holds a handful of pages at screen zoom, so printing it is useless.
+`renderer/js/print.js` builds a separate surface: every page rendered once at
+150 dpi (capped at 12 MP for large sheets) into `#print-root` as a JPEG object
+URL, behind a cancellable progress dialog. The print stylesheet shows that
+surface and hides everything else; an `@page` rule with the document's own
+page size is added through a constructed stylesheet — CSSOM, so the
+`style-src 'self'` policy is untouched — when every page shares one size.
+The surface is released on `afterprint`, never on a timer.
 
 ---
 
@@ -282,19 +328,83 @@ control. It still runs: types are coerced, enums checked, numbers clamped,
 arrays capped, and window bounds intersected against `screen.getDisplayMatching`
 so a stale or hand-edited position cannot reopen the window off-screen.
 
-Renderer writes go through an allowlist of twelve preference keys (`theme`,
-`pageTone`, `sidebarOpen`, `sidebarTab`, `defaultZoom`, `autoLookup`,
-`wiktionaryEnabled`, `wiktionaryFallbackOnly`, `wikipediaEnabled`,
-`wikipediaFallbackOnly`, `wikipediaLang`, `savedWords`); everything else is
-main-process-only.
+Renderer writes go through an allowlist of eleven preference keys (`theme`,
+`pageTone`, `wiktionaryEnabled`, `wiktionaryAsFallback`, `wikipediaEnabled`,
+`wikipediaAsFallback`, `wikipediaLang`, `webSearchLinkEnabled`,
+`sidebarVisible`, `sidebarTab`, `savedWords`); everything else — window
+bounds, the dictionary list, the record of packaged dictionaries already
+offered — is main-process-only.
+
+### Packaged dictionaries
+
+Release builds carry twelve JSON dictionaries in `resources/dictionaries`.
+`dicts.restoreFromPrefs()` treats them differently from files a reader added:
+
+- **Offered once.** Each packaged file is added the first time a build
+  containing it runs and its name is recorded in
+  `dictionaries.bundledSeen`. A dictionary the reader removes therefore stays
+  removed, while one that is new in a later release still arrives. (Seeding
+  "whenever the list is empty" undid a deliberate clear-out on every launch.)
+- **Followed when the folder moves.** A portable build unpacks to a fresh
+  temporary directory each launch. A saved path that no longer exists is
+  matched by file name into the current package and keeps its on/off state.
+- **Never duplicated.** A copy the reader already has under the same file
+  name (for example one built by `npm run dictionaries`) wins.
+
+Glossaries parse synchronously, so the loader yields to the event loop
+between files; a dozen large dictionaries cost about 0.7 s in total but never
+more than ~0.2 s at a stretch. `GLOSS_NO_BUNDLED_DICTIONARIES=1` disables the
+packaged shelf (the test harness sets it).
+
+---
+
+## The toolbar fits itself
+
+Media-query breakpoints cannot size this toolbar: its natural width depends
+on the platform's interface font, the page count (`of 9` versus `of 1204`),
+whether history buttons exist yet, and how many lookup sources there are.
+Version 2.4 demonstrated the failure — twelve dictionary chips made the
+toolbar 2,500 px wide and pushed Preferences off the edge of every window.
+
+So nothing in the toolbar may shrink, wrap or clip, and
+`renderer/js/toolbar.js` measures it. `relayout()` walks a ladder until the
+content fits: everything shown; then *compact* (labels dropped, spacing
+tightened); then controls folded into a **More** menu in a fixed priority
+order — document properties first, page-turn arrows last. Open, sidebar,
+find, the page number, Sources and Preferences never fold. A folded control
+is hidden with a class, not removed: its handler, pressed state and tooltip
+stay live and the menu item simply forwards a click to it. A `ResizeObserver`
+on the toolbar re-runs the pass, as do the events that change its content.
+
+Lookup sources are one **Sources** button with a count, opening a checklist
+that scrolls (`renderer/js/sources.js`) — a control whose width does not
+depend on how many dictionaries are loaded. Both menus share
+`renderer/js/menu.js`: anchored, clamped to the window, never taller than the
+space beneath the toolbar, arrow-key navigable.
+
+Everything else is ordinary CSS: below 760 px the sidebar floats over the
+page with a scrim instead of narrowing it, and below 600 px the Preferences
+section list becomes a row of tabs. The minimum window is 420 × 360.
 
 ---
 
 ## Keyboard layering
 
 One `keydown` dispatcher in `app.js`. `Escape` consults an explicit
-topmost-first stack — password prompt, document properties, preferences,
-search, popup, read mode — and closes exactly one layer.
+topmost-first stack — print preparation, password prompt, document
+properties, preferences, an open menu, popup, search, a floating sidebar, read
+mode — and closes exactly one layer. (The popup floats above the find bar, so
+it goes first unless focus is in the find bar.)
+
+Two rules keep keys where they belong:
+
+- **A dialog owns the keyboard.** While any modal is open the dispatcher
+  returns immediately, and `dom.js` marks everything behind the top modal
+  `inert`. Before this, `R` rotated the document behind Preferences.
+- **A focused control keeps its own keys.** Space on a button presses the
+  button; arrows in a `<select>` or a menu move within it. Reading keys
+  (`Space`, arrows, `Home`/`End`) reach the document otherwise — including
+  when focus is on the body, where native scrolling would do nothing.
 
 Zoom shortcuts match on `event.code` (`Digit0`, `Equal`, `Minus`), not
 `event.key`, because the character produced by `Shift+0` and by `+`/`-` varies

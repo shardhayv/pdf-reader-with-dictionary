@@ -162,8 +162,10 @@ function register() {
     assertString(docPath, 4096);
     if (currentDocByContents.get(event.sender.id)?.path !== docPath) return { ok: false };
     if (!patch || typeof patch !== 'object') return { ok: false };
-    const { page, zoomMode, zoomScale, scrollFraction, rotation, spreadMode, bookmarks } = patch;
-    const delta = { page, zoomMode, zoomScale, scrollFraction, rotation, spreadMode };
+    const {
+      page, zoomMode, zoomScale, scrollFraction, topPage, topOffset, rotation, spreadMode, bookmarks,
+    } = patch;
+    const delta = { page, zoomMode, zoomScale, scrollFraction, topPage, topOffset, rotation, spreadMode };
     if (Array.isArray(bookmarks)) delta.bookmarks = bookmarks;
     store.updateDocState(docPath, delta);
     return { ok: true };

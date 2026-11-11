@@ -24,6 +24,10 @@ if (!gotLock) {
 
   security.installAppHardening(app);
 
+  // Windows groups taskbar buttons, jump lists and notifications by this id;
+  // it must match the appId the installer registers.
+  if (process.platform === 'win32') app.setAppUserModelId('com.shardhay.gloss');
+
   app.on('second-instance', (_event, argv, workingDirectory) => {
     const win = windows.getMainWindow();
     if (win) {

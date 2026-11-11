@@ -1,6 +1,6 @@
 {
   "name": "gloss",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "A quiet English and Devanagari PDF reader with MDX dictionaries, per-book JSON glossaries, Wiktionary, and Wikipedia lookup",
   "keywords": [
     "pdf",
@@ -92,6 +92,10 @@
         "filter": [
           "*.json"
         ]
+      },
+      {
+        "from": "build/DICTIONARY-NOTICES.txt",
+        "to": "dictionaries/NOTICES.txt"
       }
     ],
     "win": {
@@ -120,7 +124,7 @@
       "icon": "build/icons",
       "category": "Office;Viewer",
       "synopsis": "PDF reader with instant dictionary lookup",
-      "description": "Gloss is a quiet English and Devanagari PDF reader for people who read to understand. Select a word or phrase for an immediate definition from local MDX dictionaries, your own per-book JSON glossary, Wiktionary, or Wikipedia.",
+      "description": "Gloss is a quiet English and Devanagari PDF reader for people who read to understand. Select a word or phrase for an immediate definition from bundled offline dictionaries, your own MDX dictionaries, a per-book JSON glossary, Wiktionary, or Wikipedia.",
       "desktop": {
         "entry": {
           "StartupWMClass": "Gloss",

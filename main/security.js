@@ -8,6 +8,19 @@
 
 const REQUEST_PERMISSION_DENIED = false;
 
+/**
+ * The one web permission Gloss grants, and only to its own page: writing
+ * text the reader explicitly asked to copy (a definition, a file path, the
+ * vocabulary export). Chromium routes navigator.clipboard.writeText through
+ * the permission handlers below, so a blanket deny silently broke every Copy
+ * button. Reading the clipboard stays denied.
+ */
+const GRANTED_TO_APP = new Set(['clipboard-sanitized-write']);
+
+function isAppOrigin(url) {
+  return typeof url === 'string' && url.startsWith('file://');
+}
+
 function installAppHardening(app) {
   app.on('web-contents-created', (_event, contents) => {
     contents.on('will-navigate', e => e.preventDefault());
@@ -19,8 +32,15 @@ function installAppHardening(app) {
 }
 
 function hardenSession(session) {
-  session.setPermissionRequestHandler((_wc, _permission, callback) => callback(REQUEST_PERMISSION_DENIED));
-  session.setPermissionCheckHandler(() => REQUEST_PERMISSION_DENIED);
+  session.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    const requester = details?.requestingUrl || webContents?.getURL?.() || '';
+    callback(GRANTED_TO_APP.has(permission) && isAppOrigin(requester));
+  });
+  session.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
+    if (!GRANTED_TO_APP.has(permission)) return REQUEST_PERMISSION_DENIED;
+    const requester = details?.requestingUrl || requestingOrigin || webContents?.getURL?.() || '';
+    return isAppOrigin(requester);
+  });
   session.setDevicePermissionHandler(() => REQUEST_PERMISSION_DENIED);
 }
 

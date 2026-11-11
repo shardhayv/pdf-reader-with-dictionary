@@ -291,3 +291,106 @@ test('a dictionary that fails to load is reported, not thrown', async () => {
   assert.equal(results[0].success, false);
   assert.match(results[0].error, /not found/i);
 });
+
+// ── Packaged dictionaries ─────────────────────────────────────────────────────
+
+function makePackage(names) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gloss-package-'));
+  for (const name of names) {
+    fs.writeFileSync(path.join(dir, name), JSON.stringify({
+      format: 'gloss-glossary', version: 1, scope: 'global', name: `Packaged ${name}`,
+      entries: [{ word: 'shelf', definition: `from ${name}` }],
+    }));
+  }
+  return fs.realpathSync(dir);
+}
+
+function clearShelf() {
+  resetDictionaries();
+  store.setPrefsInternal(prefs => { prefs.dictionaries = { order: [], enabled: {}, bundledSeen: [] }; });
+}
+
+test('packaged dictionaries are offered once, and a removed one stays removed', async () => {
+  clearShelf();
+  const pkg = makePackage(['01-alpha.json', '02-beta.json']);
+
+  // First launch: both arrive, enabled, in file order.
+  await dicts.restoreFromPrefs({ bundledDirs: [pkg] });
+  assert.deepEqual(dicts.list().map(d => d.name), ['Packaged 01-alpha.json', 'Packaged 02-beta.json']);
+  assert.deepEqual(store.getPrefs().dictionaries.bundledSeen, ['01-alpha.json', '02-beta.json']);
+
+  // The reader removes every one of them. The next launch must not undo that.
+  resetDictionaries();
+  assert.deepEqual(store.getPrefs().dictionaries.order, []);
+  await dicts.restoreFromPrefs({ bundledDirs: [pkg] });
+  assert.deepEqual(dicts.list(), []);
+
+  // A later release ships one more: only the new one is added.
+  fs.writeFileSync(path.join(pkg, '03-gamma.json'), JSON.stringify({
+    format: 'gloss-glossary', version: 1, scope: 'global', name: 'Packaged 03-gamma.json',
+    entries: [{ word: 'shelf', definition: 'new' }],
+  }));
+  await dicts.restoreFromPrefs({ bundledDirs: [pkg] });
+  assert.deepEqual(dicts.list().map(d => d.name), ['Packaged 03-gamma.json']);
+});
+
+test('a packaged dictionary is followed when its folder moves, keeping its on/off choice', async () => {
+  clearShelf();
+  const oldPkg = makePackage(['01-alpha.json', '02-beta.json']);
+  await dicts.restoreFromPrefs({ bundledDirs: [oldPkg] });
+  dicts.toggle(path.join(oldPkg, '02-beta.json'));            // reader switches one off
+  assert.deepEqual(dicts.list().map(d => d.enabled), [true, false]);
+
+  // A portable build unpacks somewhere new on every launch.
+  const newPkg = makePackage(['01-alpha.json', '02-beta.json']);
+  fs.rmSync(oldPkg, { recursive: true, force: true });
+  for (const d of dicts.list()) dicts.remove(d.path);
+  store.setPrefsInternal(prefs => {
+    prefs.dictionaries.order = [path.join(oldPkg, '01-alpha.json'), path.join(oldPkg, '02-beta.json')];
+    prefs.dictionaries.enabled = {
+      [path.join(oldPkg, '01-alpha.json')]: true, [path.join(oldPkg, '02-beta.json')]: false,
+    };
+  });
+
+  const results = await dicts.restoreFromPrefs({ bundledDirs: [newPkg] });
+  assert.ok(results.every(r => r.success));
+  assert.deepEqual(dicts.list().map(d => [path.dirname(d.path), d.enabled]),
+    [[newPkg, true], [newPkg, false]]);
+});
+
+test('a copy the reader already has wins over the packaged file of the same name', async () => {
+  clearShelf();
+  const own = makePackage(['01-alpha.json']);     // e.g. built by `npm run dictionaries`
+  const pkg = makePackage(['01-alpha.json', '02-beta.json']);
+  store.setPrefsInternal(prefs => {
+    prefs.dictionaries.order = [path.join(own, '01-alpha.json')];
+    prefs.dictionaries.enabled = { [path.join(own, '01-alpha.json')]: true };
+  });
+  await dicts.restoreFromPrefs({ bundledDirs: [pkg] });
+  assert.deepEqual(dicts.list().map(d => d.path),
+    [path.join(own, '01-alpha.json'), path.join(pkg, '02-beta.json')]);
+});
+
+test('a saved dictionary that has vanished is reported instead of silently dropped', async () => {
+  clearShelf();
+  const gone = path.join(userDataDir, 'gone.glossary.json');
+  store.setPrefsInternal(prefs => {
+    prefs.dictionaries.order = [gone];
+    prefs.dictionaries.enabled = { [gone]: true };
+  });
+  const results = await dicts.restoreFromPrefs({ bundledDirs: [] });
+  assert.equal(results.length, 1);
+  assert.equal(results[0].success, false);
+  assert.match(results[0].error, /not found/i);
+});
+
+test('GLOSS_NO_BUNDLED_DICTIONARIES turns the packaged shelf off', () => {
+  const before = process.env.GLOSS_NO_BUNDLED_DICTIONARIES;
+  process.env.GLOSS_NO_BUNDLED_DICTIONARIES = '1';
+  try {
+    assert.deepEqual(dicts.getBundledDictionaryPaths(), []);
+  } finally {
+    if (before === undefined) delete process.env.GLOSS_NO_BUNDLED_DICTIONARIES;
+    else process.env.GLOSS_NO_BUNDLED_DICTIONARIES = before;
+  }
+});

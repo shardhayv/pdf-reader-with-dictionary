@@ -21,7 +21,9 @@ async function shoot(name, { fixture = null, theme = 'light', width = 1280, heig
   const args = [...SANDBOX, `--user-data-dir=${dataDir}`, '.'];
   if (fixture) args.push(path.join(REPO, 'test', 'fixtures', fixture));
 
-  const app = await _electron.launch({ args, cwd: REPO });
+  const app = await _electron.launch({
+    args, cwd: REPO, env: { ...process.env, GLOSS_NO_BUNDLED_DICTIONARIES: '1' },
+  });
   const page = await app.firstWindow();
   await page.waitForSelector('body[data-ready="1"]', { timeout: 30_000 });
   await page.setViewportSize({ width, height });
@@ -89,8 +91,8 @@ async function addVisualGlossary(page, app) {
   await app.evaluate(({ dialog }, glossary) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [glossary] });
   }, file);
-  if (await page.locator('[data-chip-wiki]').getAttribute('aria-pressed') === 'true') {
-    await page.click('[data-chip-wiki]');
+  if (await page.locator('[data-source-wiki]').getAttribute('aria-checked') === 'true') {
+    await page.evaluate(() => window.gloss.setPrefs({ wikipediaEnabled: false }));
   }
   await page.evaluate(() => window.gloss.addDictionaries());
   await app.evaluate(({ BrowserWindow }) => {
@@ -136,7 +138,7 @@ const glossaryLookup = (themeWord) => async (page, app) => {
       await page.waitForTimeout(400);
     },
   });
-  await shoot('11-narrow-light', { fixture: 'latin.pdf', theme: 'light', width: 720, height: 700 });
+  await shoot('11-narrow-light', { fixture: 'large.pdf', theme: 'light', width: 520, height: 640 });
   await shoot('12-scanned-notice', { fixture: 'scanned.pdf', theme: 'light' });
   console.log(`\nScreenshots written to ${OUT}`);
 })().catch(err => { console.error('screenshot run failed:', err.message); process.exit(1); });

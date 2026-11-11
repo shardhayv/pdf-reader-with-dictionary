@@ -45,7 +45,7 @@ const PREF_DEFAULTS = Object.freeze({
   sidebarTab: 'thumbnails',
   savedWords: [],
   window: { bounds: null, isMaximized: false },
-  dictionaries: { order: [], enabled: {} },
+  dictionaries: { order: [], enabled: {}, bundledSeen: [] },
 });
 
 /** Keys the renderer may write through prefs:set. */
@@ -56,7 +56,7 @@ const RENDERER_WRITABLE = new Set([
 ]);
 
 let prefs = structuredClone(PREF_DEFAULTS);
-let docs = {}; // realpath -> { name, page, zoomMode, zoomScale, scrollFraction, lastOpened }
+let docs = {}; // realpath -> sanitizeDocState() record (position, zoom, rotation, bookmarks…)
 
 let prefsTimer = null;
 let docsTimer = null;
@@ -90,6 +90,12 @@ function sanitizePrefs(raw) {
   if (dicts.enabled && typeof dicts.enabled === 'object') {
     for (const p of order) enabled[p] = dicts.enabled[p] !== false;
   }
+  // File names of packaged dictionaries this profile has already been offered
+  // (see dicts.restoreFromPrefs): the record that keeps a removed dictionary
+  // removed.
+  const bundledSeen = Array.isArray(dicts.bundledSeen)
+    ? [...new Set(dicts.bundledSeen.filter(n => typeof n === 'string' && n.length > 0 && n.length < 256))].slice(0, 200)
+    : [];
   const savedWords = Array.isArray(src.savedWords)
     ? src.savedWords
       .filter(item => item && typeof item === 'object' && typeof item.word === 'string' && item.word.trim().length > 0)
@@ -119,7 +125,7 @@ function sanitizePrefs(raw) {
       bounds: boundsOk ? { x: b.x, y: b.y, width: b.width, height: b.height } : null,
       isMaximized: asBool(w.isMaximized, false),
     },
-    dictionaries: { order, enabled },
+    dictionaries: { order, enabled, bundledSeen },
   };
 }
 
@@ -136,6 +142,11 @@ function sanitizeDocState(raw) {
     zoomMode: asEnum(src.zoomMode, ZOOM_MODES, 'fit-width'),
     zoomScale: clampNum(src.zoomScale, ZOOM_MIN, ZOOM_MAX, 1),
     scrollFraction: clampNum(src.scrollFraction, 0, 1, 0),
+    // Exact reading position: the page at the top of the viewport and how far
+    // down it, as a fraction of that page's height. Unlike scrollFraction this
+    // survives the window being a different size next time. 0 = not recorded.
+    topPage: Number.isInteger(src.topPage) && src.topPage >= 1 ? Math.min(src.topPage, 1e6) : 0,
+    topOffset: clampNum(src.topOffset, -0.5, 1, 0),
     rotation: ROTATIONS.has(src.rotation) ? src.rotation : 0,
     spreadMode: asEnum(src.spreadMode, SPREAD_MODES, 'single'),
     bookmarks,

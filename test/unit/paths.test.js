@@ -154,3 +154,29 @@ test('looksLikePdfName accepts only .pdf names', () => {
   assert.equal(paths.looksLikePdfName('pdf'), false);
   assert.equal(paths.looksLikePdfName(null), false);
 });
+
+// ── Windows paths ─────────────────────────────────────────────────────────────
+
+test('a Windows drive path is a path, not a URL with a one-letter scheme', () => {
+  // Explorer, "Open with" and the command line all hand over drive paths.
+  // Reading "C:" as a URL scheme rejected every one of them.
+  const cwd = 'C:\\Users\\reader';
+  assert.equal(paths.toLocalPath('C:\\Books\\My Paper (final).pdf', cwd, 'win32'),
+    'C:\\Books\\My Paper (final).pdf');
+  assert.equal(paths.toLocalPath('D:/books/a.pdf', cwd, 'win32'), 'D:\\books\\a.pdf');
+  assert.equal(paths.toLocalPath('notes\\a.pdf', cwd, 'win32'), 'C:\\Users\\reader\\notes\\a.pdf');
+  assert.equal(paths.toLocalPath('\\\\server\\share\\a.pdf', cwd, 'win32'), '\\\\server\\share\\a.pdf');
+  assert.equal(paths.toLocalPath('file:///C:/Users/reader/My%20Books/a.pdf', cwd, 'win32'),
+    'C:\\Users\\reader\\My Books\\a.pdf');
+});
+
+test('remote schemes are still refused on Windows, and drive syntax means nothing elsewhere', () => {
+  for (const url of ['https://example.com/a.pdf', 'ftp://host/a.pdf', 'javascript:alert(1)', 'data:application/pdf,x']) {
+    assert.equal(paths.toLocalPath(url, 'C:\\Users\\reader', 'win32'), null);
+  }
+  // "C:a.pdf" (drive-relative) is ambiguous and not something a launcher sends.
+  assert.equal(paths.toLocalPath('C:a.pdf', 'C:\\Users\\reader', 'win32'), null);
+  // On POSIX a colon-led token keeps being treated as a (non-file) scheme.
+  assert.equal(paths.toLocalPath('C:\\Books\\a.pdf', '/home/reader', 'linux'), null);
+  assert.equal(paths.toLocalPath('-C:\\a.pdf', 'C:\\', 'win32'), null);
+});

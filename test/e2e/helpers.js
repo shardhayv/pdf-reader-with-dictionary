@@ -33,7 +33,7 @@ function fixture(name) {
  * Launch Gloss with an isolated userData directory so specs never read or
  * write the developer's real preferences and recent-file list.
  */
-async function launchGloss({ open = null, extraArgs = [], userDataDir = null } = {}) {
+async function launchGloss({ open = null, extraArgs = [], userDataDir = null, bundledDictionaries = false } = {}) {
   const dataDir = userDataDir || fs.mkdtempSync(path.join(os.tmpdir(), 'gloss-e2e-'));
   const args = [
     ...SANDBOX_ARGS,
@@ -43,10 +43,30 @@ async function launchGloss({ open = null, extraArgs = [], userDataDir = null } =
   ];
   if (open) args.push(fixture(open));
 
-  const app = await _electron.launch({ args, cwd: REPO });
+  // A source checkout may hold the 12 packaged dictionaries
+  // (bundled-dictionaries/). Specs assert exact dictionary lists and lookup
+  // results, so they start from an empty shelf unless they ask otherwise.
+  const env = { ...process.env };
+  if (bundledDictionaries) delete env.GLOSS_NO_BUNDLED_DICTIONARIES;
+  else env.GLOSS_NO_BUNDLED_DICTIONARIES = '1';
+
+  const app = await _electron.launch({ args, cwd: REPO, env });
   const page = await app.firstWindow();
   await page.waitForSelector('body[data-ready="1"]', { timeout: 30_000 });
   return { app, page, dataDir };
+}
+
+/** Resize the real window (not an emulated viewport) and let layout settle. */
+async function resizeWindow(app, page, width, height) {
+  await app.evaluate(({ BrowserWindow }, size) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    win.setMinimumSize(200, 200);
+    win.setContentSize(size.width, size.height);
+  }, { width, height });
+  await page.waitForFunction(
+    size => window.innerWidth === size.width && window.innerHeight === size.height,
+    { width, height }, { timeout: 10_000 });
+  await page.waitForTimeout(250);
 }
 
 /** Wait until the first page canvas has painted. */
@@ -63,4 +83,6 @@ function collectErrors(page) {
   return errors;
 }
 
-module.exports = { REPO, FIXTURES, SANDBOX_ARGS, fixture, launchGloss, waitForDocument, collectErrors };
+module.exports = {
+  REPO, FIXTURES, SANDBOX_ARGS, fixture, launchGloss, resizeWindow, waitForDocument, collectErrors,
+};
